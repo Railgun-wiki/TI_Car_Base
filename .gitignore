@@ -1,0 +1,13 @@
+# macOS and editor state
+.DS_Store
+.clangd
+.vscode/
+
+# CCS/Theia generated build output and indexes
+Debug/
+Release/
+**/.clangd/
+
+# CMake or host-build output, when used locally
+build/
+CMakeUserPresets.json
