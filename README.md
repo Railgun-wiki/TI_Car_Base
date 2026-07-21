@@ -1,8 +1,8 @@
 ## Example Summary
 
-Empty C++ project using DriverLib.
-This example shows a basic empty project using DriverLib with just main C++ file
-and SysConfig initialization.
+TI_Car_Base is a C++ DriverLib project for MSPM0G3507.
+It contains the car board's SysConfig initialization and hardware interface
+configuration.
 
 ## Peripherals & Pin Assignments
 

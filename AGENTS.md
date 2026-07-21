@@ -15,7 +15,7 @@
 
 ## 配置唯一来源
 
-- 引脚、时钟、PWM、I2C、UART 与 GPIO 的唯一来源是 `empty_cpp.syscfg`。
+- 引脚、时钟、PWM、I2C、UART 与 GPIO 的唯一来源是 `TI_Car_Base.syscfg`。
 - 必须通过 CCS SysConfig MCP/GUI 修改 `.syscfg`；禁止直接编辑，也禁止编辑 `Debug/ti_msp_dl_config.*`、`Debug/device.*` 或 `Debug/Event.dot`。
 - `Debug/` 为构建和 SysConfig 生成输出，不纳入版本控制。
 - 工程目前使用 SysConfig `1.28.0`；变更版本前需先说明兼容性影响。
