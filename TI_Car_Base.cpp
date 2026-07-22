@@ -35,6 +35,8 @@
 int main(void)
 {
     SYSCFG_DL_init();
+    DL_TimerA_startCounter(PWM_MOTOR_INST);
+    DL_TimerG_startCounter(PWM_MOTOR_B_INST);
 
     while (1) {
     }

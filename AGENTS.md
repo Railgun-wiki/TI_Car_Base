@@ -24,21 +24,33 @@
 
 | 功能 | 外设/引脚 | 约束 |
 | --- | --- | --- |
-| TB6612 PWMA/PWMB | `TIMA1 CCP0/CCP1`: `PB2` / `PB3` | `PWM_MOTOR`，4 kHz，初始占空比 0%。先写方向再更新 PWM；停止时停止计数器并拉低输出。 |
-| TB6612 AIN1/AIN2 | `PA13` / `PA14` | `GPIO_MOTOR_DIR`，初始低。 |
-| TB6612 BIN1/BIN2 | `PA16` / `PA17` | `GPIO_MOTOR_DIR`，初始低。 |
-| 四路循迹 | `PA27`, `PA12`, `PB16`, `PB17` | `GPIO_LINE_SENSOR`：`IR_DH1..4`，普通输入；信号极性应在驱动层统一转换。 |
+| TB6612 PWMA | `TIMA1 CCP0`: `PA28` | `PWM_MOTOR`，10 kHz，初始占空比 0%。 |
+| TB6612 PWMB | `TIMG12 CCP0`: `PB20` | `PWM_MOTOR_B`，10 kHz，初始占空比 0%。两路 PWM 使用不同 timer。 |
+| TB6612 AIN1/AIN2 | `PA13` / `PB26` | `GPIO_MOTOR_DIR`，初始低。 |
+| TB6612 BIN1/BIN2 | `PB9` / `PB7` | `GPIO_MOTOR_DIR`，初始低。 |
+| 八路灰度循迹 | `PA31`, `PA12`, `PB8`, `PA27`, `PB0`, `PA30`, `PB21`, `PB10` | `GPIO_LINE_SENSOR`：`C1..C8`，普通输入；信号极性应在驱动层统一转换。 |
+| 左编码器 | `PB23` / `PB12` | `GPIO_ENCODER`：`ENCODER_LEFT_A/B`，双边沿 GPIO interrupt，软件正交解码。 |
+| 右编码器 | `PB4` / `PB5` | `GPIO_ENCODER`：`ENCODER_RIGHT_A/B`，双边沿 GPIO interrupt，软件正交解码。 |
 | MPU6050 I2C | `I2C0`: SDA `PA0`，SCL `PA1` | `I2C_MPU6050` controller，400 kHz，外部 3.3 V 上拉必需。地址取决于 AD0：低=`0x68`，高=`0x69`。 |
-| MPU6050 INT | `PB11` | `GPIO_MPU6050_DATA_READY` 上升沿中断；ISR 只置位 data-ready flag，I2C 读取在任务上下文完成。 |
+| OLED I2C | `I2C1`: SCL `PB2`，SDA `PB3` | `I2C_OLED` controller，400 kHz；使用独立硬件 I2C，不与 MPU 的 I2C0 竞争。外部 3.3 V 上拉必需。 |
+| MPU6050/ICM INT | `PB11` | `GPIO_MPU6050_DATA_READY.MPU6050_INT`，上升沿 GPIO interrupt。ISR 只置位 data-ready flag；I2C 读取在主循环执行。 |
+| TM2027 五向按键 | UP `PA14`、LEFT `PA15`、DOWN `PA17`、RIGHT `PB25`、CENTER `PB24` | `GPIO_KEY`，input + internal pull-up，Common 接地，按下为 low；第一阶段 polling，Driver 层做 debounce。 |
+| 三路状态 LED | LED1 `PB14`、LED2 `PB18`、LED3 `PA22` | `GPIO_LED`，push-pull output，初始 high（熄灭）。LED 阳极上拉至 3.3 V，low 点亮。 |
 | 调试/telemetry | `UART0`: TX `PA10`，RX `PA11` | `UART_CONSOLE`，115200 8N1，TX FIFO interrupt。该引脚为 LP-MSPM0G3507 XDS110 backchannel。 |
+| 扩展 UART | UART1 `PA8/PA9`；UART2 `PB15/PB16`；UART3 `PA26/PB13` | `UART1_MODULE`、`UART2_MODULE`、`UART3_MODULE`，均为 115200 8N1、FIFO。 |
 | SWD | `PA19`, `PA20` | 调试保留，禁止分配给应用。 |
 
 ## 关键实现约束
 
+- CPU、MCLK 与 ULPCLK 采用 SYSPLL 的 80 MHz 配置；禁止在未重新核对 Flash wait states、UART/I2C 时序和功耗的情况下改回默认时钟树。
 - I2C FIFO 仅 8 bytes；超过 FIFO 深度的事务必须采用中断/分段填充。开始传输前等待总线 idle；轮询路径需保留 I2C_ERR_13 的短延时。
-- PWM 定时器不会由 SysConfig 自动启动。应用初始化后显式调用 `DL_TimerA_startCounter(PWM_MOTOR_INST)`。
+- PWM 定时器不会由 SysConfig 自动启动。应用初始化后显式调用 `DL_TimerA_startCounter(PWM_MOTOR_INST)` 和 `DL_TimerG_startCounter(PWM_MOTOR_B_INST)`。
 - 方向变更必须先将两路 PWM 置为安全状态，等待最短死区，再更新 `AIN/BIN`；禁止运行时切换方向脚造成桥臂直通。
 - UART TX ISR 只负责搬运 FIFO；禁止在 ISR 内调用 `printf`、日志或 I2C。
+- OLED 使用 `I2C1` 的有超时非阻塞/分段传输；禁止在 ISR 或 1 kHz 电机控制路径中刷新显示。
+- `GPIO_MPU6050_DATA_READY` ISR 必须先清中断标志、再置位采样通知；禁止在 ISR 内执行 I2C、姿态解算或日志。
+- TM2027 按键 Common 接地，逻辑为 active-low；首版采用 polling 并在 Driver 层以时间戳 debounce，避免机械抖动产生多次命令。
+- 编码器 GPIO ISR 必须读取两相的当前状态并更新有符号计数；禁止在 ISR 内计算速度、执行 PID 或打印。输入滤波与解码方向需按实测最高脉冲率和车轮方向验证。
 - 硬件信号电平、PWM 频率、MPU6050 INT 极性与实际车板一致性必须实机验证；编译成功不代表接线正确。
 
 ## 验证与 Git
