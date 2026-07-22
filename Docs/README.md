@@ -10,6 +10,7 @@
 - [Middlewares/control.md](Middlewares/control.md)：控制、速度估算与姿态后端。
 - [Developer/maintenance_guide.md](Developer/maintenance_guide.md)：维护、构建、姿态切换、标定和上板验收的操作手册。
 - [Developer/firmware_plan.md](Developer/firmware_plan.md)：小车固件的分层、静态 OOP、无 RTOS 调度与演进方案。
+- [Developer/api_implementation_reference.md](Developer/api_implementation_reference.md)：按类与 BSP 接口说明当前实现原理、调用契约、状态返回与扩展接入方式。
 
 ## 状态标记
 
