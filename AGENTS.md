@@ -61,3 +61,10 @@
 - 每次改动 `.syscfg` 后，检查 SysConfig 无 errors/warnings，再使用 CCS `buildProject` 构建。
 - 不提交 `Debug/`、`Release/`、`.clangd`、IDE 缓存或 SDK 生成物。
 - 提交前只暂存当前任务文件，使用 Conventional Commit；未经明确要求不得 push。
+
+## C/C++ 格式化
+
+- 修改或新增 C/C++ 源码后，提交前必须使用项目可用的
+  `clang-format -i` 格式化对应的 `.c`、`.cpp`、`.h`、`.hpp` 文件。
+- 格式化范围仅限本次修改的源码；不得用格式化制造无关差异。
+- 格式化后必须重新构建；格式化不替代编译或实机验证。

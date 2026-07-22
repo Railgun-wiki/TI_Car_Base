@@ -32,6 +32,34 @@ Application -> Middlewares -> Drivers -> BSP -> SysConfig / DriverLib
 
 这一方式保留了 OOP 的 ownership 与可测试边界，同时避免堆、析构顺序和动态派发带来的不可预测性。
 
+### DMP Target 与标定初值
+
+`ThirdParty/eMPL/` 为 InvenSense Motion Driver 的 vendor boundary。只允许在
+其平台选择区增加 `EMPL_TARGET_MSPM0`，映射 `i2c_read/write`、
+`delay_ms`、`get_ms` 和 no-op log 到 `BSP/MPU6050`；不得修改 DMP
+firmware、FIFO parser、寄存器流程或姿态算法。DMP 使用 100 Hz、6-axis
+quaternion 和 calibrated gyro；yaw 是相对航向，不能视为绝对航向。
+
+`Middleware/Attitude/attitude_backend_config.h` 的
+`ATTITUDE_CONFIG_BACKEND` 可选 `ATTITUDE_BACKEND_DMP`（默认）、
+`ATTITUDE_BACKEND_COMPLEMENTARY` 与 `ATTITUDE_BACKEND_KALMAN`。
+三者都输出相同的 `ImuSample`；软件滤波使用 MPU6050 原始采样，不编译
+eMPL 主体。互补滤波适合轻量、快速验证，Kalman 为每轴 angle+bias 二状态；
+两者都只有 6-axis 相对 yaw。
+
+`EncoderSpeedEstimator` 的初值来自 Wheeltec C07A：65 mm 轮径、28:1
+减速比、13 CPR、2x 软件解码。该配置仅作起点，必须以本车实测值替换。闭环
+算法可以计算和上报，但 `SafetyGate` 默认禁止它写入电机，直至完成方向、
+极性、轮径、减速比、编码器倍率和 PID 参数标定。
+
+## 首版代码边界与台架 Demo
+
+源码按 `BSP/`、`Drivers/`、`Middlewares/`、`Application/` 组织。`BSP/` 与 `Drivers/` 并列：前者是板级实现，独占 DriverLib/SysConfig，并按 `system`、`i2c`、`uart`、`motor`、`input`、`indicator`、`encoder` 拆分；后者是设备语义 Driver，例如 `motor_driver.*`、`mpu6050.*`。每个设备或功能独占同名 `.hpp + .cpp`。`Middlewares` 只处理 `VehicleCommand`、`WheelCommand`、`LineSample`、`EncoderTicks`、`ImuSample` 等值对象。
+
+`TI_Car_Base.cpp` 是唯一入口：用 SysTick 产生 1 ms tick，并运行 cooperative `CarApplication::step()`。首版的 PID、差速运动学与巡线仅产生命令建议，`SafetyGate` 默认不把它们送入电机。
+
+最小台架 Demo 只允许 CENTER 连续长按 500 ms 后运行：UP 使两轮以固定低占空比正转，DOWN 反转；松手立即停车。初始化、IMU 通信或显示通信失败均保持电机停止。UART0 每 50 ms 输出状态，LED 表示运行/设备就绪，蜂鸣器只作短提示。
+
 ## 参考工程的取舍
 
 ### MPU6050-F4
