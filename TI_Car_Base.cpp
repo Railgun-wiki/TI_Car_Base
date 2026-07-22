@@ -30,14 +30,13 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "ti_msp_dl_config.h"
+#include "Application/car_application.hpp"
+#include "BSP/system.hpp"
 
-int main(void)
-{
-    SYSCFG_DL_init();
-    DL_TimerA_startCounter(PWM_MOTOR_INST);
-    DL_TimerG_startCounter(PWM_MOTOR_B_INST);
-
-    while (1) {
-    }
+int main(void) {
+  bsp::init();
+  app::CarApplication application{};
+  application.init();
+  while (1)
+    application.step();
 }
