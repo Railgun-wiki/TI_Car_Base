@@ -68,3 +68,10 @@
   `clang-format -i` 格式化对应的 `.c`、`.cpp`、`.h`、`.hpp` 文件。
 - 格式化范围仅限本次修改的源码；不得用格式化制造无关差异。
 - 格式化后必须重新构建；格式化不替代编译或实机验证。
+
+## 文档维护
+
+- 修改公开接口、分层边界、时序、安全状态、默认参数、硬件映射或构建流程时，必须同步维护 `Docs/` 中对应职责目录的 Markdown 文档及其索引。
+- 文档按 `Application/`、`BSP/`、`Drivers/`、`Middlewares/`、`Developer/` 分类；架构决策放 `Developer/firmware_plan.md`，可操作维护步骤放 `Developer/maintenance_guide.md`。
+- 文档必须区分“已构建”“待实机验证”和“规划”，不得将编译结果表述为硬件验收。
+- 引入或更新第三方源码时，记录来源、允许的 portability patch 和禁止修改的边界。

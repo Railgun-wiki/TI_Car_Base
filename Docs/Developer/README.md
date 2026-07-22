@@ -4,7 +4,10 @@
 
 ## 文档入口
 
+- [maintenance_guide.md](maintenance_guide.md)：当前代码的维护、标定、构建和验收手册。
 - [firmware_plan.md](firmware_plan.md)：当前推荐的固件演进方案。
+
+模块接口说明位于上级 `Docs/Application`、`Docs/BSP`、`Docs/Drivers` 与 `Docs/Middlewares`，不在本目录重复维护。
 
 ## 基本原则
 
