@@ -30,6 +30,8 @@
 | 右编码器 | `E2A` / `E2B` | `PB4` / `PB5` | `GPIO_ENCODER` | input，双边沿 GPIO interrupt | 软件正交解码；非硬件 QEI。 |
 | 五向按键 | UP/LEFT/DOWN/RIGHT/CENTER | `PA14` / `PA15` / `PA17` / `PB25` / `PB24` | `GPIO_KEY` | input，internal pull-up | TM2027 的 Common 接地；按下为 low；由 Driver polling + debounce。 |
 | LED1/2/3 | `LED1` / `LED2` / `LED3` | `PB14` / `PB18` / `PA22` | `GPIO_LED` | push-pull output，初始 high | LED 阳极上拉至 3.3 V，GPIO low 点亮。 |
+| 用户 LED | `USER_LED` | `PB22` | `GPIO_LED.USER_LED` | push-pull output，初始 low | 用户确认高电平点亮。 |
+| 有源蜂鸣器 | `BUZZER` | `PA21` | `GPIO_BUZZER.BUZZER` | push-pull output，初始 high | S8550 PNP 高边驱动；GPIO low 开启、high 关闭；不使用 PWM。 |
 
 ### 八路灰度循线
 
@@ -46,12 +48,23 @@
 | `C7` | `C7` | `PB21` | `GPIO_LINE_SENSOR.C7` | 用户确认的灰度输入；自动提取表仍标为 `AD0`，须以实机复核。 |
 | `C8` | `C8` | `PB10` | `GPIO_LINE_SENSOR.C8` | H6.1 |
 
+### 未启用的板载外设
+
+以下器件存在于开发板，但当前固件不为它们生成 SysConfig 外设实例。它们不是遗漏：禁用是为了保留小车电机、灰度与启动行为的确定性。
+
+| 板载器件 | 网络与引脚 | 当前状态 | 原因与重新启用条件 |
+| --- | --- | --- | --- |
+| W25Q128JVSIQ SPI Flash | CS `PB6`、MISO `PB7`、MOSI `PB8`、CLK `PB9` | 未配置 SPI、GPIO CS 或 Flash 驱动 | `PB7`/`PB8`/`PB9` 已分别用于 `BIN2`、`C3`、`BIN1`。保留完整 TB6612 与八路灰度功能优先；仅在硬件改线或放弃对应小车信号后才能启用。 |
+| BSL 按键 | `PA18`，端口下拉，按下为 3.3 V | 未配置 GPIO | 该键用于 BSL/启动维护，用户当前不需要其作为应用输入。若要启用，需先确认复位/启动流程不会将其误判为 BSL 请求，再配置为 input + pull-down。 |
+| 板载用户 KEY | `PB21`，按下接地 | 未配置 GPIO | 与灰度通道 `C7` 共用引脚；当前选择保留灰度输入。若需此键，必须改线或放弃 `C7`。 |
+
 ### 未配置或待确认项
 
 | 项目 | 原理图事实 | 处理决定 |
 | --- | --- | --- |
 | MPU/ICM data-ready | 用户确认 MPU 已接中断线；使用 `PB11`。 | 已配置为上升沿 GPIO interrupt。需在实机确认 MPU 寄存器中 data-ready 的有效极性；若为 low active，改为 falling edge。 |
 | OLED I2C | MSPM0G3507 具有 `I2C0` 和 `I2C1`；`PB2/PB3` 可由 `I2C1` 使用。 | 已配置 `I2C_OLED` / `I2C1` 为 `PB2/PB3` 400 kHz；MPU 保持 `I2C_MPU6050` / `I2C0` 的 `PA0/PA1`。两条硬件总线独立，无资源冲突；OLED 上拉必须至 3.3 V。 |
+| 板载 Flash / BSL Key / 用户 KEY | 未启用器件和引脚冲突详见上表。 | W25Q128 与 PB21 KEY 分别受小车引脚复用限制；PA18 BSL Key 因用户不需要且应保持启动维护用途而禁用。TM2027 五向按键不受影响，保持已配置。 |
 | 灰度电平 | 原理图未说明黑线/白底对应高低电平。 | 实机采样确认后在 Driver 层配置 `activeLow`，不直接改巡线策略。 |
 | C4/C5/C7 网络名 | 自动提取结果分别为 `ADC_read`、`AD2`、`AD0`，但用户已确认其属于八路灰度输入。 | SysConfig 按用户确认配置为 GPIO input；上电前须用万用表/逻辑分析确认这些网络未被 U1 的模拟功能驱动。 |
 

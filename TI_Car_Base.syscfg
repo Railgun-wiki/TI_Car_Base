@@ -20,6 +20,7 @@ const GPIO3  = GPIO.addInstance();
 const GPIO4  = GPIO.addInstance();
 const GPIO5  = GPIO.addInstance();
 const GPIO6  = GPIO.addInstance();
+const GPIO7  = GPIO.addInstance();
 const I2C    = scripting.addModule("/ti/driverlib/I2C", {}, false);
 const I2C1   = I2C.addInstance();
 const I2C2   = I2C.addInstance();
@@ -107,7 +108,7 @@ GPIO4.associatedPins[0].polarity    = "RISE";
 GPIO4.associatedPins[0].pin.$assign = "PB11";
 
 GPIO5.$name                          = "GPIO_LED";
-GPIO5.associatedPins.create(3);
+GPIO5.associatedPins.create(4);
 GPIO5.associatedPins[0].$name        = "LED1";
 GPIO5.associatedPins[0].initialValue = "SET";
 GPIO5.associatedPins[0].pin.$assign  = "PB14";
@@ -117,6 +118,8 @@ GPIO5.associatedPins[1].pin.$assign  = "PB18";
 GPIO5.associatedPins[2].$name        = "LED3";
 GPIO5.associatedPins[2].initialValue = "SET";
 GPIO5.associatedPins[2].pin.$assign  = "PA22";
+GPIO5.associatedPins[3].$name        = "USER_LED";
+GPIO5.associatedPins[3].pin.$assign  = "PB22";
 
 GPIO6.$name                              = "GPIO_KEY";
 GPIO6.associatedPins.create(5);
@@ -140,6 +143,12 @@ GPIO6.associatedPins[4].$name            = "KEY_CENTER";
 GPIO6.associatedPins[4].direction        = "INPUT";
 GPIO6.associatedPins[4].internalResistor = "PULL_UP";
 GPIO6.associatedPins[4].pin.$assign      = "PB24";
+
+GPIO7.$name                          = "GPIO_BUZZER";
+GPIO7.associatedPins[0].$name        = "BUZZER";
+GPIO7.associatedPins[0].initialValue = "SET";
+GPIO7.associatedPins[0].ioStructure  = "SD";
+GPIO7.associatedPins[0].pin.$assign  = "PA21";
 
 I2C1.$name                             = "I2C_MPU6050";
 I2C1.basicEnableController             = true;
@@ -197,6 +206,12 @@ PWM2.peripheral.ccp0Pin.$assign         = "PB20";
 SYSCTL.SYSPLL_CLK0En     = true;
 SYSCTL.MCLKSource        = "HSCLK";
 SYSCTL.validateClkStatus = true;
+SYSCTL.HFCLKSource       = "HFXT";
+SYSCTL.HFCLK_Freq        = 40000000;
+SYSCTL.LFCLKSource       = "LFXT";
+SYSCTL.SYSPLLSource      = "HFCLK";
+SYSCTL.SYSPLL_Qdiv       = 8;
+SYSCTL.useHFCLK_Manual   = true;
 
 UART1.$name                            = "UART_CONSOLE";
 UART1.targetBaudRate                   = 115200;
@@ -264,14 +279,18 @@ UART4.rxPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
  * version of the tool will not impact the pinmux you originally saw.  These lines can be completely deleted in order to
  * re-solve from scratch.
  */
-Board.peripheral.$suggestSolution          = "DEBUGSS";
-Board.peripheral.swclkPin.$suggestSolution = "PA20";
-Board.peripheral.swdioPin.$suggestSolution = "PA19";
-I2C1.peripheral.$suggestSolution           = "I2C0";
-I2C2.peripheral.$suggestSolution           = "I2C1";
-PWM2.peripheral.$suggestSolution           = "TIMG12";
-SYSCTL.peripheral.$suggestSolution         = "SYSCTL";
-UART1.peripheral.$suggestSolution          = "UART0";
-UART2.peripheral.$suggestSolution          = "UART3";
-UART3.peripheral.$suggestSolution          = "UART2";
-UART4.peripheral.$suggestSolution          = "UART1";
+Board.peripheral.$suggestSolution            = "DEBUGSS";
+Board.peripheral.swclkPin.$suggestSolution   = "PA20";
+Board.peripheral.swdioPin.$suggestSolution   = "PA19";
+I2C1.peripheral.$suggestSolution             = "I2C0";
+I2C2.peripheral.$suggestSolution             = "I2C1";
+PWM2.peripheral.$suggestSolution             = "TIMG12";
+SYSCTL.peripheral.$suggestSolution           = "SYSCTL";
+SYSCTL.peripheral.lfxInPin.$suggestSolution  = "PA3";
+SYSCTL.peripheral.lfxOutPin.$suggestSolution = "PA4";
+SYSCTL.peripheral.hfxInPin.$suggestSolution  = "PA5";
+SYSCTL.peripheral.hfxOutPin.$suggestSolution = "PA6";
+UART1.peripheral.$suggestSolution            = "UART0";
+UART2.peripheral.$suggestSolution            = "UART3";
+UART3.peripheral.$suggestSolution            = "UART2";
+UART4.peripheral.$suggestSolution            = "UART1";

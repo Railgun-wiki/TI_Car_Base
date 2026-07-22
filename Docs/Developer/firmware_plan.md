@@ -4,7 +4,7 @@
 
 本工程面向 MSPM0G3507 差速小车。第一阶段目标是在不引入 RTOS 的前提下，完成安全电机驱动、八路灰度巡线、MPU6050/ICM I2C 采样、OLED 硬件 I2C 显示、UART telemetry，以及为编码器闭环预留清晰边界。
 
-已配置的硬件基线为：SYSPLL 80 MHz、TB6612 PWM 10 kHz、MPU6050 `I2C0/PA0/PA1` 400 kHz、OLED `I2C1/PB2/PB3` 400 kHz、四个 UART 115200。具体引脚和参数以 `TI_Car_Base.syscfg` 为准。
+已配置的硬件基线为：外部 HFXT 40 MHz + LFXT 32.768 kHz、以 HFXT 为 SYSPLL 参考的 80 MHz MCLK、TB6612 PWM 10 kHz、MPU6050 `I2C0/PA0/PA1` 400 kHz、OLED `I2C1/PB2/PB3` 400 kHz、四个 UART 115200。具体引脚和参数以 `TI_Car_Base.syscfg` 为准。
 
 ## 架构决策
 
@@ -46,7 +46,7 @@ Application -> Middlewares -> Drivers -> BSP -> SysConfig / DriverLib
 
 作为 DriverLib 用法、80 MHz 时钟和外设能力的参考，不直接引入。其通用库通过枚举、全局外设表和直接寄存器访问适配多种资源组合，与本工程的 SysConfig 单一配置来源不匹配；并且其源文件声明 GPL-3.0，直接复用会引入相应许可证义务。
 
-本工程所谓“静态配置”是只为本车固化实际资源：I2C0、四个 UART、两路 PWM、PB2/PB3 的 software I2C、既定方向 GPIO 和传感器 GPIO，而不是保留通用 pin enum 或全局 callback table。
+本工程所谓“静态配置”是只为本车固化实际资源：I2C0/I2C1、四个 UART、两路 PWM、既定方向 GPIO 和传感器 GPIO，而不是保留通用 pin enum 或全局 callback table。
 
 ## 无 RTOS 调度
 
@@ -76,8 +76,9 @@ ISR 只能做有界且非阻塞的工作：置 flag、读取/锁存计数或写�
 - `MotorDriver::stop()` 必须在启动失败、通信超时、传感器故障和显式停车时可重复调用。
 - 巡线驱动层统一原始 GPIO 极性；策略层只消费逻辑化的 `LineSample`。
 - MPU data-ready 接至 `PB11`，配置为上升沿 GPIO interrupt；ISR 仅置位读取通知，不能在 ISR 中执行 I2C。实机须确认 data-ready 极性。
-- TM2027 五向按键 Common 接地，`GPIO_KEY` 配置为 active-low polling；按键 debounce 属于 Driver，不应让 Application 直接读取 GPIO。
+- W25Q128 Flash 的 `PB7/PB8/PB9` 分别与 TB6612/灰度引脚冲突，板载 `PB21` 用户按键与 `C7` 冲突；两者当前不启用，以保留完整小车外设。`PA18` BSL 按键按用户决定保持禁用，避免把启动维护信号混入应用输入。TM2027 五向按键使用独立的 `PA14/PA15/PA17/PB25/PB24`，保持 `GPIO_KEY` active-low polling 配置。
 - 三路 LED 阳极上拉至 3.3 V，`GPIO_LED` 为 active-low output；上电 high（熄灭），只能通过 Driver 提供的语义化接口控制。
+- 有源蜂鸣器由 `PA21` 经 S8550 PNP 高边驱动，`GPIO_BUZZER.BUZZER` 为 active-low GPIO：上电 high（关闭）、low（开启）。它不是无源蜂鸣器，不能使用 PWM 音调接口。
 - 编码器已配置为四个双边沿 GPIO interrupt，由 Driver 进行软件正交解码；速度闭环与里程计仍须先按实测轮径、减速比和最高脉冲率校验方向、溢出与控制参数。
 
 ## 迁入 RTOS 的条件
