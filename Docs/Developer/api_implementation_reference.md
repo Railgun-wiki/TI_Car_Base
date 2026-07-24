@@ -80,14 +80,15 @@ void step() noexcept;
 
 | 条件/周期 | 动作 | 失败行为 |
 | --- | --- | --- |
-| 每 5 ms | `line_.read()`，更新缓存 `lineSample_` | 无 I/O 错误返回；灰度极性需实测。 |
+| 每 5 ms | 读取灰度，以固定 dt 执行巡线 PID 和差速混合 | 无命中时 PID reset 并发布零建议；灰度极性需实测。 |
 | `consumeImuDataReady()` 为真 | 调用选中 IMU 的 `poll()`；软件后端再调用 `AttitudeFilter::update()` | 除 `Ok`、`Busy` 外，置 `imuReady_ = false`、停止电机并打开蜂鸣器。 |
 | CENTER 连按至少 500 ms | 解锁台架 Demo | 未解锁时 `SafetyGate` 始终输出零。 |
-| 解锁且 UP/DOWN 按住 | 以 `{180,180}` / `{-180,-180}` 驱动两轮 | 松键、未解锁或没有方向键时立即写入零。 |
+| 解锁且 UP 按住 | 允许巡线轮端建议通过 `SafetyGate` | 松开 CENTER/UP 或丢线时立即写入零。 |
 | 每 500 ms | 翻转用户 LED | 仅表示 superloop 活着。 |
-| 每 50 ms | 格式化 UART telemetry，并更新第一行 OLED | UART 写满时丢弃剩余内容；OLED 单次失败目前未清除 `oledReady_`。 |
+| 每 50 ms | 格式化 VOFA+ telemetry，并更新第一行 OLED | UART ring 空间不足时丢弃完整帧；OLED 单次失败目前未清除 `oledReady_`。 |
 
-当前 Demo 仅识别 UP/DOWN；LEFT/RIGHT、巡线、速度 PI 和差速混合尚未接入电机。自动控制接入时应让候选命令始终先通过 `SafetyGate`，并先完成《维护手册》的方向、编码器和 PID 标定。
+当前 Demo 已接入巡线 PID 和差速混合，速度 PI 尚未接入。候选命令始终先通过
+`SafetyGate`；实车运行前仍需完成《维护手册》的方向、灰度和 PID 标定。
 
 ## 4. Middleware：可脱板测试的算法层
 
@@ -301,11 +302,15 @@ void setStatusLed(uint8_t index, bool on) noexcept;
 void setUserLed(bool on) noexcept;
 void setBuzzer(bool on) noexcept;
 bool uartTryWrite(const char* data, size_t length) noexcept;
+bool uartTryRead(uint8_t& byte) noexcept;
 ```
 
 `readLineBits()` 把 C1..C8 读取值放到 bit0..bit7，未转换灰度极性。`keyPressed()` 只支持五个实体键，`None` 返回 false，且按键为 active-low。状态 LED 和蜂鸣器是 active-low，用户 LED 是 active-high；这些电平细节被封装在 BSP/Driver 内。
 
-`uartTryWrite()` 是 best-effort 的非阻塞发送：只在 UART 未 busy、数据非空且长度不超过 4 byte 时写 TX FIFO，否则返回 false。Application 将 telemetry 分成 4-byte 块尝试写入；发生 busy 时丢弃本帧余下内容，保证低优先级日志不等待控制路径。
+UART 使用 256-byte TX 和 128-byte RX 静态 ring buffer。`uartTryWrite()` 只在
+完整帧可入队时返回 true，否则丢弃整帧并增加 TX drop counter；`uartTryRead()`
+从 RX ring 取单字节。UART ISR 只搬运 FIFO，命令解析和 telemetry 格式化均在
+Application 主循环。
 
 ### 编码器与 MPU data-ready 中断
 
@@ -323,7 +328,7 @@ extern "C" void GPIOB_IRQHandler(void);
 
 ## 7. 姿态后端编译选择
 
-在 `Middleware/Attitude/attitude_backend_config.h` 设置：
+在 `Middlewares/attitude_backend_config.h` 设置：
 
 ```c
 #define ATTITUDE_CONFIG_BACKEND ATTITUDE_BACKEND_DMP
@@ -344,7 +349,7 @@ extern "C" void GPIOB_IRQHandler(void);
 以“自动巡线 + 速度闭环”为例，建议保持现有职责边界：
 
 1. 在 Application 的固定周期读取 `Encoder::ticks()`，用 `EncoderSpeedEstimator` 得到 `WheelSpeed`；
-2. 将 `LineFollower::update(lineSample_)` 的 `VehicleCommand` 交给 `DifferentialDrive::mix()`；
+2. 以固定 5 ms 调用 `LineFollower::update(lineSample_, 0.005F)`，并将结果交给 `DifferentialDrive::mix()`；
 3. 左右轮各用一个 `Pid`，把目标/实测速度转换为 `WheelCommand`；
 4. 在完成所有安全判定后，通过 `SafetyGate::apply()`；
 5. 最后且只在 Application 中调用 `MotorDriver::set()`。
@@ -355,8 +360,9 @@ extern "C" void GPIOB_IRQHandler(void);
 
 - SysConfig 描述资源事实；本文档不复制或替代其完整引脚/寄存器配置。
 - 线传感极性、DMP 安装轴、左右电机正方向、编码器符号/倍率、轮径和 PID 均为待实机验证项。
-- Keypad 尚无消抖，OLED 尚无通用字库/多页 framebuffer，UART 尚无发送 ring buffer。
+- Keypad 尚无消抖，OLED 尚无通用字库/多页 framebuffer。
 - I2C 超时会返回，但尚无物理总线恢复；DMP FIFO overflow 仅 reset FIFO 后等待下一包。
-- `EncoderSpeedEstimator`、`Pid`、`LineFollower` 和 `DifferentialDrive` 已实现但尚未编入 `CarApplication` 的自动控制链路。
+- `Pid`、`LineFollower` 和 `DifferentialDrive` 已接入循线 Demo；编码器速度闭环
+  尚未接入。
 
 这些限制是当前安全分阶段策略的一部分。新增功能时应同步更新本文档、对应模块文档与上板验收记录。

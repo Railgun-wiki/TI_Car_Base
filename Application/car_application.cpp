@@ -4,6 +4,17 @@
 #include "BSP/uart.hpp"
 
 namespace app {
+namespace {
+void sendText(const char *text) noexcept {
+  if (text == nullptr)
+    return;
+  std::size_t length = 0U;
+  while (text[length] != '\0')
+    ++length;
+  (void)bsp::uartTryWrite(text, length);
+}
+} // namespace
+
 void CarApplication::init() noexcept {
   motor_.stop();
   leds_.setStatus(0U, true);
@@ -27,6 +38,8 @@ void CarApplication::step() noexcept {
   if (static_cast<std::uint32_t>(now - lastLineMs_) >= 5U) {
     lastLineMs_ = now;
     lineSample_ = line_.read();
+    const car::VehicleCommand command = follower_.update(lineSample_, 0.005F);
+    lineWheelCommand_ = drive_.mix(command);
   }
   if (imuReady_ && bsp::consumeImuDataReady()) {
     car::ImuSample sample{};
@@ -49,22 +62,51 @@ void CarApplication::step() noexcept {
       imuReady_ = false;
       motor_.stop();
       buzzer_.set(true);
+    } else if (status == car::Status::Ok) {
+      imuSample_ = sample;
     }
   }
   const bool center = keys_.pressed(car::Key::Center);
   if (center && !centerWasPressed_)
     centerSinceMs_ = now;
   centerWasPressed_ = center;
-  // Demo only: long-hold CENTER is required, UP/DOWN choose direction, release
-  // or timeout stops.
+  // Keep the enable action deliberate: CENTER arms the car, while UP is the
+  // hold-to-run control. Releasing either key stops immediately.
   const bool armed =
       center && static_cast<std::uint32_t>(now - centerSinceMs_) >= 500U;
-  car::WheelCommand demo{0, 0};
-  if (armed && keys_.pressed(car::Key::Up))
-    demo = {180, 180};
-  if (armed && keys_.pressed(car::Key::Down))
-    demo = {-180, -180};
-  motor_.set(gate_.apply(demo, armed));
+  lineFollowEnabled_ = armed && keys_.pressed(car::Key::Up);
+  motor_.set(gate_.apply(lineWheelCommand_, lineFollowEnabled_));
+
+  std::uint8_t rxByte = 0U;
+  middleware::VofaCommand vofaCommand{};
+  while (bsp::uartTryRead(rxByte)) {
+    if (!vofa_.consume(rxByte, vofaCommand))
+      continue;
+    if (vofaCommand.type == middleware::VofaCommandType::GetConfig) {
+      char response[96]{};
+      if (telemetry_.formatConfig(response, sizeof(response),
+                                  follower_.config()))
+        sendText(response);
+    } else if (lineFollowEnabled_) {
+      sendText("err:RUNNING\r\n");
+    } else if (vofaCommand.type == middleware::VofaCommandType::SetLinePid) {
+      const auto config = follower_.config();
+      if (follower_.configure(vofaCommand.kp, vofaCommand.ki, vofaCommand.kd,
+                              config.cruise))
+        sendText("ack:LINE\r\n");
+      else
+        sendText("err:RANGE\r\n");
+    } else if (vofaCommand.type == middleware::VofaCommandType::SetCruise) {
+      const auto config = follower_.config();
+      if (follower_.configure(config.kp, config.ki, config.kd,
+                              vofaCommand.cruise))
+        sendText("ack:CRUISE\r\n");
+      else
+        sendText("err:RANGE\r\n");
+    } else {
+      sendText("err:FORMAT\r\n");
+    }
+  }
   if (static_cast<std::uint32_t>(now - lastHeartbeatMs_) >= 500U) {
     lastHeartbeatMs_ = now;
     heartbeat_ = !heartbeat_;
@@ -72,20 +114,18 @@ void CarApplication::step() noexcept {
   }
   if (static_cast<std::uint32_t>(now - lastTelemetryMs_) >= 50U) {
     lastTelemetryMs_ = now;
-    char text[96]{};
-    if (telemetry_.format(text, sizeof(text), lineSample_, encoder_.ticks(),
-                          imuReady_, oledReady_)) {
-      for (char *p = text; *p != '\0'; p += 4U) {
-        char part[4]{};
-        std::size_t i = 0;
-        for (; i < 4U && p[i] != '\0'; ++i)
-          part[i] = p[i];
-        if (!bsp::uartTryWrite(part, i))
-          break;
-      }
+    char text[224]{};
+    if (telemetry_.formatFrame(
+            text, sizeof(text), lineSample_, encoder_.ticks(), imuSample_,
+            motor_.command(), follower_.config(), lineFollowEnabled_, imuReady_,
+            bsp::uartRxDroppedBytes(), bsp::uartTxDroppedFrames()))
+      sendText(text);
+    if (oledReady_) {
+      const char *status = "HOLD CENTER+UP";
+      if (lineFollowEnabled_)
+        status = lineSample_.detected ? "LINE FOLLOWING" : "LINE LOST";
+      (void)oled_.writeLine(status);
     }
-    if (oledReady_)
-      (void)oled_.writeLine(imuReady_ ? "CAR READY" : "IMU ERROR");
   }
 }
 } // namespace app

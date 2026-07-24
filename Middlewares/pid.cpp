@@ -26,4 +26,8 @@ void Pid::reset() noexcept {
   previous_ = 0.0F;
   hasPrevious_ = false;
 }
+void Pid::configure(PidConfig config) noexcept {
+  config_ = config;
+  reset();
+}
 } // namespace middleware

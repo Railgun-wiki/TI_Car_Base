@@ -12,6 +12,8 @@ public:
   explicit Pid(PidConfig config) noexcept : config_(config) {}
   float update(float target, float measured, float dt) noexcept;
   void reset() noexcept;
+  void configure(PidConfig config) noexcept;
+  PidConfig config() const noexcept { return config_; }
 
 private:
   PidConfig config_;

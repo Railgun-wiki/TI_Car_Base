@@ -8,12 +8,13 @@
 #include "Drivers/mpu6050.hpp"
 #include "Drivers/mpu6050_dmp.hpp"
 #include "Drivers/ssd1306.hpp"
-#include "Middleware/Attitude/attitude_backend_config.h"
+#include "Middlewares/attitude_backend_config.h"
 #include "Middlewares/attitude_filter.hpp"
 #include "Middlewares/differential_drive.hpp"
 #include "Middlewares/line_follower.hpp"
 #include "Middlewares/safety_gate.hpp"
 #include "Middlewares/telemetry.hpp"
+#include "Middlewares/vofa_protocol.hpp"
 
 namespace app {
 class CarApplication final {
@@ -38,10 +39,13 @@ private:
 #endif
   };
   drivers::Ssd1306 oled_{};
-  middleware::LineFollower follower_{{45.0F, 180}};
+  middleware::LineFollower follower_{{45.0F, 0.0F, 0.0F, 180}};
   middleware::DifferentialDrive drive_{{0.15F}};
   middleware::SafetyGate gate_{};
   middleware::Telemetry telemetry_{};
+  middleware::VofaProtocol vofa_{};
+  car::WheelCommand lineWheelCommand_{};
+  car::ImuSample imuSample_{};
   std::uint32_t lastLineMs_ = 0U;
   std::uint32_t lastTelemetryMs_ = 0U;
   std::uint32_t lastHeartbeatMs_ = 0U;
@@ -53,6 +57,7 @@ private:
 #endif
   bool oledReady_ = false;
   bool heartbeat_ = false;
+  bool lineFollowEnabled_ = false;
   car::LineSample lineSample_{};
 };
 } // namespace app

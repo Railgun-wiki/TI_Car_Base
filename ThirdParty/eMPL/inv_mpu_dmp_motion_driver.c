@@ -14,7 +14,7 @@
  *      @details    All functions are preceded by the dmp_ prefix to
  *                  differentiate among MPL and general driver function calls.
  */
-#include "Middleware/Attitude/attitude_backend_config.h"
+#include "Middlewares/attitude_backend_config.h"
 #if defined(ATTITUDE_FILTER_IMPL_DMP)
 
 #include <stdio.h>
@@ -26,7 +26,7 @@
 #include "inv_mpu_dmp_motion_driver.h"
 #include "dmpKey.h"
 #include "dmpmap.h"
-#include "Middleware/Attitude/attitude_backend_config.h"
+#include "Middlewares/attitude_backend_config.h"
 
 /* The following functions must be defined for this platform:
  * i2c_write(unsigned char slave_addr, unsigned char reg_addr,

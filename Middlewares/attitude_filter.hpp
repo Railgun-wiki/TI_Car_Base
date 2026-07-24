@@ -27,6 +27,7 @@ private:
                      float dtSeconds) noexcept;
   AttitudeFilterConfig config_;
   KalmanAxis roll_{}, pitch_{};
+  float yaw_ = 0.0F;
   bool initialized_ = false;
 };
 } // namespace middleware

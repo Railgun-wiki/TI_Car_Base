@@ -17,7 +17,7 @@
  *                  MPU9150 (or MPU6050 w/ AK8975 on the auxiliary bus)
  *                  MPU9250 (or MPU6500 w/ AK8963 on the auxiliary bus)
  */
-#include "Middleware/Attitude/attitude_backend_config.h"
+#include "Middlewares/attitude_backend_config.h"
 #if defined(ATTITUDE_FILTER_IMPL_DMP)
 
 #include <stdio.h>
@@ -26,7 +26,7 @@
 #include <string.h>
 #include <math.h>
 #include "inv_mpu.h"
-#include "Middleware/Attitude/attitude_backend_config.h"
+#include "Middlewares/attitude_backend_config.h"
 
 /* The following functions must be defined for this platform:
  * i2c_write(unsigned char slave_addr, unsigned char reg_addr,

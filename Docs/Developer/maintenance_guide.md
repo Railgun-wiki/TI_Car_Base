@@ -32,7 +32,7 @@ RTTI 与热路径虚函数。
 | 编码器 | 左 PB23/PB12；右 PB4/PB5；双边沿 GPIO ISR | ISR 仅更新 ticks，不计算速度/PID。 |
 | MPU6050 | I2C0 PA0/PA1 400 kHz；INT PB11 | ISR 仅置 data-ready；I2C/FIFO 仅在主循环。 |
 | OLED | I2C1 PB2/PB3 400 kHz | 无设备或超时必须降级，不得阻塞控制。 |
-| UART0 | PA10/PA11，115200 8N1 | telemetry 允许丢弃，不得阻塞。 |
+| UART0 | PA10/PA11，115200 8N1，RX/TX interrupt | VOFA+ telemetry 允许整帧丢弃，不得阻塞。 |
 | 五向键 | PA14/PA15/PA17/PB25/PB24，active-low | Driver 负责去抖语义。 |
 | LED/蜂鸣器 | LED1/2/3 active-low；PB22 active-high；PA21 蜂鸣器 active-low | PA21 为有源蜂鸣器，禁止配置 PWM。 |
 
@@ -57,7 +57,7 @@ W25Q128 的 PB6..PB9、板载 PB21 key 和 PA18 BSL 不纳入本固件，原因�
 
 ## 5. 姿态后端
 
-在 `Middleware/Attitude/attitude_backend_config.h` 选择一个后端：
+在 `Middlewares/attitude_backend_config.h` 选择一个后端：
 
 ```c
 #define ATTITUDE_CONFIG_BACKEND ATTITUDE_BACKEND_DMP
@@ -79,11 +79,13 @@ portability patch 仅限：添加 `EMPL_TARGET_MSPM0` 分支、Target 编译包�
 
 - SysTick 提供 1 ms 单调时间。
 - 编码器 ISR 只更新 ticks；MPU PB11 ISR 只置 data-ready。
-- 主循环以 200 Hz 读取灰度/按键、按 IMU data-ready 读取姿态、20 Hz 输出 telemetry；
-  OLED 为低优先级。
-- 台架 Demo：CENTER 连续按住 500 ms 后，UP/ DOWN 以低占空比正/反转；松手停车。
+- 主循环以 200 Hz 读取灰度并执行巡线 PID、按 IMU data-ready 读取姿态、20 Hz
+  输出 VOFA+ telemetry；OLED 为低优先级。
+- 循线 Demo：CENTER 连续按住 500 ms 后，同时按住 CENTER + UP 才运行；松手或
+  丢线停车。
 - 初始化失败、DMP/I2C/FIFO 错误均调用 `MotorDriver::stop()`。软件滤波或巡线算法
-  默认只计算；`SafetyGate` 不允许自动闭环直接驱动电机。
+  的输出必须经过 `SafetyGate` 才能驱动电机。
+- VOFA+ 调参只允许在循线未 enable 时执行；UART ISR 只搬运固定 ring buffer。
 
 ## 7. 标定清单
 
@@ -116,8 +118,8 @@ portability patch 仅限：添加 `EMPL_TARGET_MSPM0` 分支、Target 编译包�
 ## 9. 上板验收顺序
 
 1. 断开电机或抬空车轮，上电确认 PWM 为零、电机无动作。
-2. 验证 LED、蜂鸣器、UART0 状态输出和 CENTER 长按保护。
-3. 分别验证左右轮低占空比正反转；记录实际方向。
+2. 验证 LED、蜂鸣器、VOFA+ 姿态输出、调参响应和 CENTER 长按保护。
+3. 抬空车轮验证左右轮循线输出方向；记录实际方向。
 4. 验证 8 路灰度的“线/底”逻辑与加权误差方向。
 5. 推动轮子并检查编码器 ticks 正负与每圈计数。
 6. 检查 MPU `WHO_AM_I`、PB11 中断、姿态轴向和 DMP FIFO overflow 恢复。

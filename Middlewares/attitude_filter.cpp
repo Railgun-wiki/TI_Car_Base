@@ -7,6 +7,7 @@ namespace middleware {
 void AttitudeFilter::reset() noexcept {
   roll_ = {};
   pitch_ = {};
+  yaw_ = 0.0F;
   initialized_ = false;
 }
 float AttitudeFilter::updateKalman(KalmanAxis &axis, float measured, float rate,
@@ -51,7 +52,8 @@ car::Status AttitudeFilter::update(car::ImuSample &sample, float dt) noexcept {
     sample.rollDeg = roll_.angle;
     sample.pitchDeg = pitch_.angle;
   }
-  sample.yawDeg += sample.gz * dt; // 6-axis yaw is relative and will drift.
+  yaw_ += sample.gz * dt; // 6-axis yaw is relative and will drift.
+  sample.yawDeg = yaw_;
   return car::Status::Ok;
 }
 } // namespace middleware
