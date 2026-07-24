@@ -16,7 +16,9 @@ main()
             └─ MSPM0 外设
 ```
 
-`CarApplication` 独占 `MotorDriver`，因此只有 Application 能把最终的轮端命令写到 PWM。`LineFollower`、`DifferentialDrive`、`Pid`、`EncoderSpeedEstimator` 当前均只产生或计算数据，尚未接入自动行驶闭环。
+`CarApplication` 独占 `MotorDriver`，因此只有 Application 能把最终的轮端命令
+写到 PWM。`LineFollower`、`Pid` 与 `DifferentialDrive` 已接入循线 Demo；
+`EncoderSpeedEstimator` 仍只计算数据，编码器速度闭环尚未接入。
 
 数据方向如下：
 
@@ -24,7 +26,7 @@ main()
 GPIO gray -> LineSensorArray -> LineSample -> LineFollower -> VehicleCommand
 encoder ISR -> Encoder -> EncoderTicks -> EncoderSpeedEstimator -> WheelSpeed
 MPU I2C/FIFO -> Mpu6050 or Mpu6050Dmp -> ImuSample -> AttitudeFilter (software backend)
-manual/demo command -> SafetyGate -> MotorDriver -> BSP PWM + TB6612
+line-follow wheel proposal -> SafetyGate -> MotorDriver -> BSP PWM + TB6612
 ```
 
 所有公开接口均为 `noexcept`。失败不通过异常上抛，而是以 `car::Status` 返回；调用方必须显式检查。
@@ -82,7 +84,7 @@ void step() noexcept;
 | --- | --- | --- |
 | 每 5 ms | 读取灰度，以固定 dt 执行巡线 PID 和差速混合 | 无命中时 PID reset 并发布零建议；灰度极性需实测。 |
 | `consumeImuDataReady()` 为真 | 调用选中 IMU 的 `poll()`；软件后端再调用 `AttitudeFilter::update()` | 除 `Ok`、`Busy` 外，置 `imuReady_ = false`、停止电机并打开蜂鸣器。 |
-| CENTER 连按至少 500 ms | 解锁台架 Demo | 未解锁时 `SafetyGate` 始终输出零。 |
+| CENTER 连按至少 500 ms | 解锁循线 Demo | 未解锁时 `SafetyGate` 始终输出零。 |
 | 解锁且 UP 按住 | 允许巡线轮端建议通过 `SafetyGate` | 松开 CENTER/UP 或丢线时立即写入零。 |
 | 每 500 ms | 翻转用户 LED | 仅表示 superloop 活着。 |
 | 每 50 ms | 格式化 VOFA+ telemetry，并更新第一行 OLED | UART ring 空间不足时丢弃完整帧；OLED 单次失败目前未清除 `oledReady_`。 |
@@ -100,11 +102,15 @@ void step() noexcept;
 Pid(PidConfig config) noexcept;
 float update(float target, float measured, float dtSeconds) noexcept;
 void reset() noexcept;
+void configure(PidConfig config) noexcept;
+PidConfig config() const noexcept;
 ```
 
 `PidConfig` 包含 `kp`、`ki`、`kd`、`outputLimit` 和 `integralLimit`。`update()` 计算 `e = target - measured`，积分候选值先限幅，再计算 P/I/D，最终输出再按 `outputLimit` 限幅。首次调用将 D 项设为 0，避免初始微分冲击；`dt <= 0` 直接返回 0，且不更新历史状态。
 
-这里的积分限幅是基础 anti-windup；它没有根据输出饱和反算积分。若将 PID 用于电机速度闭环，应以固定控制周期调用，并用实测的方向与单位定义 target/measured。
+`configure()` 替换参数并 reset 积分/微分历史，`config()` 返回当前参数副本。这里的
+积分限幅是基础 anti-windup；它没有根据输出饱和反算积分。若将 PID 用于电机速度
+闭环，应以固定控制周期调用，并用实测的方向与单位定义 target/measured。
 
 ### `middleware::DifferentialDrive`
 
@@ -127,10 +133,15 @@ right = clamp(linear + turn)
 
 ```cpp
 LineFollower(LineFollowerConfig config) noexcept;
-car::VehicleCommand update(const car::LineSample& sample) const noexcept;
+car::VehicleCommand update(const car::LineSample& sample, float dtSeconds) noexcept;
+bool configure(float kp, float ki, float kd, int16_t cruise) noexcept;
 ```
 
-检测到线时输出 `{cruise, -gain * error}`；丢线时输出 `{0, 0}`。负号约定意味着误差正负会影响转向方向，必须在实车上验证 `LineSensorArray` 位序、线路径及电机正方向。当前构造参数是 `gain=45.0F`、`cruise=180`，但该输出尚未接到 `MotorDriver`。
+检测到线时，以 `target=0`、`measured=sample.error` 和固定 5 ms dt 执行受限
+PID，输出 `{cruise, turn}`；丢线时 reset PID 并输出 `{0, 0}`。当前默认参数是
+`kp=45, ki=0, kd=0, cruise=180`。运行时配置范围为 kp 0..300、ki 0..30、
+kd 0..100、cruise 0..500；配置成功会 reset PID 状态。误差与转向符号仍必须
+通过传感器位序和电机方向实机确认。
 
 ### `middleware::EncoderSpeedEstimator`
 
@@ -178,11 +189,22 @@ car::WheelCommand apply(car::WheelCommand proposal, bool enabled) const noexcept
 ### `middleware::Telemetry`
 
 ```cpp
-bool format(char* output, size_t capacity, const car::LineSample& line,
-            car::EncoderTicks ticks, bool imuReady, bool oledReady) const noexcept;
+bool formatFrame(..., const car::ImuSample& imu, car::WheelCommand wheels,
+                 const LineFollowerConfig& lineConfig, ...) const noexcept;
+bool formatConfig(char* output, size_t capacity,
+                  const LineFollowerConfig& lineConfig) const noexcept;
 ```
 
-输出固定 ASCII 帧：`line=%02X,e=%d,enc=%ld/%ld,imu=%u,oled=%u\r\n`。空指针、零容量或格式化结果放不下时返回 `false`。它只格式化，不访问 UART，也不保存状态；当前 Application 使用 96-byte 栈缓冲区。
+`formatFrame()` 输出 VOFA+ FireWater 命名 ASCII 帧，包含姿态、灰度、轮端命令、
+编码器、PID、cruise、运行状态和 UART drop counter；`formatConfig()` 输出当前
+循线配置。空指针、零容量或缓冲区不足时返回 `false`。该类只格式化，不访问
+UART，也不保存协议状态；Application 的周期帧使用 224-byte 栈缓冲区。
+
+### `middleware::VofaProtocol`
+
+它以固定 80-byte 行缓冲消费 UART byte stream，只在收到 `\n` 后产生命令。
+支持 `SET,LINE,kp,ki,kd`、`SET,CRUISE,value` 和 `GET,CONFIG`；普通十进制由
+轻量解析器处理，不支持科学计数法。行过长、空行和未知命令返回 `Invalid`。
 
 ## 5. Drivers：设备语义层
 

@@ -16,7 +16,7 @@ SysConfig。
 | `BSP/` | SysConfig/DriverLib 的板级实现、ISR、时基、I2C/UART/PWM/GPIO | `Common/`、DriverLib、SysConfig 生成头 | Driver、Middleware、Application |
 | `Drivers/` | 电机、传感器、显示、按键等设备语义 | `BSP/`、`Common/` | Application、算法实现、SysConfig 宏 |
 | `Middlewares/` | PID、速度估算、运动学、巡线、姿态、telemetry、安全门 | `Common/`、标准 C++ | BSP、DriverLib、GPIO |
-| `Application/` | 初始化、周期调度、台架 Demo、设备装配 | 所有上层公开接口 | 寄存器和 SysConfig 宏 |
+| `Application/` | 初始化、周期调度、循线 Demo、设备装配 | 所有上层公开接口 | 寄存器和 SysConfig 宏 |
 | `ThirdParty/eMPL/` | InvenSense MPU6050 DMP vendor 源码 | 仅经 target port 使用 | 业务与板级逻辑 |
 
 `TI_Car_Base.cpp` 是唯一 `main()`。对象静态组合；禁止 `new/delete`、异常、

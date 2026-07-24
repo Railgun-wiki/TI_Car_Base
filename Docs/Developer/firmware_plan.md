@@ -52,7 +52,7 @@ eMPL 主体。互补滤波适合轻量、快速验证，Kalman 为每轴 angle+b
 算法可以计算和上报，但 `SafetyGate` 默认禁止它写入电机，直至完成方向、
 极性、轮径、减速比、编码器倍率和 PID 参数标定。
 
-## 首版代码边界与台架 Demo
+## 当前代码边界与循线 Demo
 
 源码按 `BSP/`、`Drivers/`、`Middlewares/`、`Application/` 组织。`BSP/` 与 `Drivers/` 并列：前者是板级实现，独占 DriverLib/SysConfig，并按 `system`、`i2c`、`uart`、`motor`、`input`、`indicator`、`encoder` 拆分；后者是设备语义 Driver，例如 `motor_driver.*`、`mpu6050.*`。每个设备或功能独占同名 `.hpp + .cpp`。`Middlewares` 只处理 `VehicleCommand`、`WheelCommand`、`LineSample`、`EncoderTicks`、`ImuSample` 等值对象。
 
