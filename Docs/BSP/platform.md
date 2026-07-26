@@ -4,7 +4,7 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `system.*` | 手工排序的 SysConfig 初始化、80 MHz SysTick 1 ms、PWM 启动。 |
+| `system.*` | 手工排序的 SysConfig 初始化、80 MHz SysTick 1 ms、PWM 启动、`delayMs()` 忙等延时。 |
 | `i2c.*` | I2C0 轮询超时事务和仅启动期使用的 address-only probe；I2C1 OLED 异步 DMA 发送；支持 DMP firmware 的流式 FIFO 写入。 |
 | `uart.*` | UART0 RX/TX interrupt、固定 ring buffer、整帧 best-effort enqueue 与 TX-drain 查询。 |
 | `motor.*` | TB6612 方向、PWM、死区与停止。 |
@@ -14,9 +14,13 @@
 
 `SysTick_Handler` 仅递增毫秒计数。`GPIOB_IRQHandler` 只更新 tick、清中断并置
 IMU flag；`UART0_IRQHandler` 只在硬件 FIFO 与 256-byte TX / 128-byte RX
-ring buffer 之间搬运数据。ISR 内禁止 I2C、DMP、PID、OLED、UART 格式化和动态
-分配。TX ring 空间不足时丢弃完整帧，RX ring 满时丢弃新 byte，并分别累计 drop
-counter。
+ring buffer 之间搬运数据；`I2C1_IRQHandler` 仅收尾 OLED 的 DMA 写入（TX Done /
+NACK / arbitration-lost），I2C1 controller 的 RX 仍由轮询路径处理。ISR 内禁止
+I2C、DMP、PID、OLED、UART 格式化和动态分配。TX ring 空间不足时丢弃完整帧，RX
+ring 满时丢弃新 byte，并分别累计 drop counter。
+
+`bsp::delayMs()` 基于 `g_millis` 的 SysTick 倒数忙等，可在调度器启动前和安全
+的 `init()` 路径（如 MPU 静态零偏标定）中使用；不得在中断或实时控制回路里调用。
 
 `bsp::init()` 不直接调用生成的 `SYSCFG_DL_init()`，而是按生成函数手工排列为
 Power/GPIO/SYSCTL/PWM → UART0 → I2C0/I2C1 → 其余 UART/DMA/clock。这样 UART0

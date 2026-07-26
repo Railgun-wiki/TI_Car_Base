@@ -8,8 +8,7 @@
 | `DifferentialDrive` | `VehicleCommand` | 左右 `WheelCommand`。 |
 | `LineFollower` | `LineSample`、5 ms dt | 可运行时配置的 PID 巡线命令，不直接控制电机。 |
 | `EncoderSpeedEstimator` | ticks、timestamp | 左右轮 m/s。 |
-| `AttitudeFilter` | 原始 `ImuSample`、dt | 互补 / Kalman / Mahony AHRS roll/pitch/yaw。 |
-| `SafetyGate` | 命令、enabled | 默认输出零。 |
+| `AttitudeFilter` | 原始 `ImuSample`、dt | 互补 / Kalman / Mahony AHRS roll/pitch/yaw。 || `SafetyGate` | 命令、enabled | 默认输出零。 |
 | `Telemetry` | 状态 DTO | 固定缓冲格式化。 |
 | `VofaProtocol` | UART RX byte stream | 组帧并解析 VOFA+ 文本调参命令。 |
 
@@ -26,6 +25,8 @@
 
 DMP 使用 MPU 内部姿态；软件后端使用原始驱动与 `AttitudeFilter`。四个后端都是 6-axis，yaw 均为相对值。
 Mahony 默认参数 Kp=0.17 / Ki=0.004 取自 SJTU-AuTop `attitude_solution.c`，通过 `rawImu_.calibrateGyroBias()` 做启动时静态零偏标定（约 1 s，需静止），运行时再由 Ki 持续收敛；无温度补偿。
+
+`AttitudeFilter::update()` 拒绝 `dt<=0` 或 `dt>0.1 s` 的样本。Mahony 路径在加速度范数近零（自由落体或丢帧）时禁用加速度叉乘修正、仅积分陀螺，并将重力参考置为单位向量，避免 `fastInvSqrt(0)` 产生 NaN 污染四元数；`fastInvSqrt` 的浮点↔整数重解释改用 `memcpy` 以避免严格别名 UB。
 
 `EncoderSpeedConfig` 初值为 Wheeltec C07A 的 65 mm、28:1、13 CPR、2x decode。确认本车方向、轮径、倍率和 PID 前，`SafetyGate` 不得允许闭环写入电机。
 

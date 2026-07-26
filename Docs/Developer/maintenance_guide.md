@@ -28,7 +28,7 @@ RTTI 与热路径虚函数。
 | --- | --- | --- |
 | 系统时钟 | HFXT 40 MHz、LFXT 32.768 kHz、MCLK 80 MHz | 修改时必须复核 flash wait state、I2C/UART 时序。 |
 | TB6612 | PA28/PB20 PWM 10 kHz；方向 PA13/PB26/PB9/PB7 | 改变方向前先归零 PWM；上电必须停止。 |
-| 灰度 | C1..C8：PA31/PA12/PB8/PA27/PB0/PA30/PB21/PB10 | 在 `LineSensorArray` 统一极性。 |
+| 灰度 | C1..C8：PA31/PA12/PB8/PA27/PB0/PA30/PB21/PB10 | 在 `LineSensorArray` 统一极性；实测翻转用 `Drivers/line_sensor_config.h` 的 `LINE_SENSOR_LINE_IS_HIGH`。 |
 | 编码器 | 左 PB23/PB12；右 PB4/PB5；双边沿 GPIO ISR | ISR 仅更新 ticks，不计算速度/PID。 |
 | MPU6050 | I2C0 PA0/PA1 400 kHz；INT PB11 | ISR 仅置 data-ready；I2C/FIFO 仅在主循环。 |
 | OLED | I2C1 PB2/PB3 400 kHz | 无设备或超时必须降级，不得阻塞控制。 |
@@ -68,8 +68,8 @@ W25Q128 的 PB6..PB9、板载 PB21 key 和 PA18 BSL 不纳入本固件，原因�
 
 | 后端 | 数据路径 | 适用场景 | 限制 |
 | --- | --- | --- | --- |
-| DMP（默认） | MPU FIFO -> eMPL -> quaternion/Euler | 正常实车运行 | 6-axis yaw 仍为相对值。 |
-| Complementary | 原始 accel + gyro | 快速验证、最小资源 | yaw 积分漂移。 |
+| Complementary（默认） | 原始 accel + gyro | 快速验证、最小资源 | yaw 积分漂移。 |
+| DMP | MPU FIFO -> eMPL -> quaternion/Euler | 正常实车运行 | 6-axis yaw 仍为相对值。 |
 | Kalman | 每轴 angle+bias 二状态 | 对比调参与噪声测试 | 仅 roll/pitch 融合，yaw 积分漂移。 |
 | Mahony | 四元数 + PI 修正 + 启动静态零偏 | 实车主用、直线抗漂移 | 需启动时静止 1 s 标定；无温度补偿。 |
 

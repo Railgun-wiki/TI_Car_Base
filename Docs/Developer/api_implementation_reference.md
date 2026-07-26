@@ -173,8 +173,11 @@ car::Status update(car::ImuSample& sample, float dtSeconds) noexcept;
 
 | `AttitudeAlgorithm` | 原理 | 输出限制 |
 | --- | --- | --- |
-| `Complementary` | `angle = w * (angle + gyroRate * dt) + (1-w) * accelAngle`；默认 `w=0.98` | roll/pitch 融合，yaw 仅陀螺积分。 |
+| `Complementary`（默认） | `angle = w * (angle + gyroRate * dt) + (1-w) * accelAngle`；默认 `w=0.98` | roll/pitch 融合，yaw 仅陀螺积分。 |
 | `Kalman` | 每轴维护 `angle`、`bias` 和 2×2 协方差；预测后用加速度角创新量更新 | 同样只有 roll/pitch 融合；参数为 `QAngle/QBias/RMeasure`。 |
+| `Mahony` | 四元数 AHRS，加速度叉乘修正 + PI 反馈；默认 `Kp=0.17 / Ki=0.004` | roll/pitch/yaw 全输出；yaw 为相对值，无磁力计必漂移。 |
+
+Mahony 路径在加速度范数近零（自由落体或丢帧）时禁用叉乘修正、仅积分陀螺，并将重力参考置为单位向量，避免 `fastInvSqrt(0)` 产生 NaN 污染四元数；`fastInvSqrt` 的浮点↔整数重解释改用 `memcpy` 以避免严格别名 UB。
 
 无磁力计时，`yawDeg += gz * dt` 必然漂移。DMP 后端不调用本类。
 
@@ -233,12 +236,13 @@ Driver 层可依赖 BSP，但不向上泄漏 DriverLib 或 SysConfig 宏。
 ### MPU6050 原始数据：`drivers::Mpu6050`
 
 ```cpp
+explicit Mpu6050(std::uint8_t addr = 0U) noexcept;
 car::Status begin() noexcept;
 car::Status poll(car::ImuSample& sample) noexcept;
 bool ready() const noexcept;
 ```
 
-`begin()` 通过 I2C0 读取 `WHO_AM_I (0x75)`，只接受地址 `0x68` 和返回值 `0x68`，成功后设置 `ready_`。`poll()` 从 `ACCEL_XOUT_H (0x3B)` 连续读取 14 byte，按 ±2 g（16384 LSB/g）和 ±250 deg/s（131 LSB/(deg/s)）转换。温度字段被读取但不输出；roll/pitch/yaw 和 timestamp 初始为 0，需由 Application 及 `AttitudeFilter` 填充。
+构造函数可选指定 I2C 地址（`0x68` AD0 低 / `0x69` AD0 高）；默认 `0` 表示交给 `begin()` 自动探测。`begin()` 在地址为 `0` 时依次探测 `0x68`、`0x69`，以 `WHO_AM_I (0x75)` 返回值 `0x68` 确认；探测失败返回 `DeviceMismatch` 并保持 `ready_=false`。确认设备后唤醒电源（`PWR_MGMT_1=0`），并对软件后端写入采样默认值：`CONFIG` DLPF=3（44 Hz accel / 42 Hz gyro 带宽）、`SMPLRT_DIV=9`（约 100 Hz，匹配 `AttitudeFilter` 假设的 10 ms 轮询）、`GYRO_CONFIG`=±250 dps、`ACCEL_CONFIG`=±2 g。DMP 后端会自行重配这些寄存器，故默认值写入仅对软件后端生效。`poll()` 从 `ACCEL_XOUT_H (0x3B)` 连续读取 14 byte，按 ±2 g（`kAccelSensitivity=16384` LSB/g）和 ±250 dps（`kGyroSensitivity=131` LSB/(deg/s)）转换；`TEMP_OUT`（`0x41/0x42`）两字节在 burst 中跳过、当前管线不输出。roll/pitch/yaw 和 timestamp 初始为 0，需由 Application 及 `AttitudeFilter` 填充。
 
 注意：`poll()` 当前不检查 `ready_`，因此正确用法是仅在 `begin()==Ok` 后调用；这也是该 Driver 的调用契约。
 
@@ -283,10 +287,11 @@ BSP 是唯一可包含 `ti_msp_dl_config.h` 的层。下面接口不应由 Middl
 ```cpp
 void bsp::init() noexcept;
 uint32_t bsp::millis() noexcept;
+void bsp::delayMs(uint32_t ms) noexcept;
 extern "C" void SysTick_Handler(void);
 ```
 
-`init()` 调用 `SYSCFG_DL_init()`，先停止电机、启动两路 PWM、采样编码器初态，并以 80 MHz 配置 1 kHz SysTick。`SysTick_Handler()` 仅递增 `volatile g_millis`。`millis()` 是单调的 32-bit 毫秒计数，所有周期比较均使用无符号减法，因此可跨回绕工作。
+`init()` 调用 `SYSCFG_DL_init()`，先停止电机、启动两路 PWM、采样编码器初态，并以 80 MHz 配置 1 kHz SysTick。`SysTick_Handler()` 仅递增 `volatile g_millis`。`millis()` 是单调的 32-bit 毫秒计数，所有周期比较均使用无符号减法，因此可跨回绕工作。`delayMs()` 基于 `g_millis` 忙等倒数，可在调度器启动前和安全 `init()` 路径（如 MPU 静态零偏标定）使用；不得在 ISR 或实时控制回路调用。
 
 ### I2C
 

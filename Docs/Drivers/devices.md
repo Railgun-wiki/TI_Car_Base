@@ -5,11 +5,13 @@
 | `MotorDriver` | 有符号 `WheelCommand`、可重复 `stop()` | 指令限幅至 ±1000；方向安全在 BSP。 |
 | `Encoder` | 读取/复位 `EncoderTicks` | 不在 Driver 内计算速度。 |
 | `LineSensorArray` | 8-bit `LineSample`、加权 error | 灰度极性必须实机确认。 |
+
+`LineSensorArray` 的 `read()` 把 `bsp::readLineBits()` 的原始 8 bit 归一为“置位 = 压在线上”，再做 `-7..+7` 加权求平均。灰度模块指示 LED 默认“贴白亮、贴黑灭”，但 OUT 引脚电平是否与指示灯同相取决于传感器板，必须在 `Drivers/line_sensor_config.h` 按 `LINE_SENSOR_LINE_IS_HIGH`（默认 `1`：高电平 = 压线）实机确认；翻转极性只改该宏，不改正文权重逻辑。
 | `Keypad` | active-low 稳定按键状态 | polling + 20 ms 去抖；长按/按下沿逻辑在 Application。 |
 | `Led` / `ActiveBuzzer` | 不暴露 GPIO 极性 | 蜂鸣器是 active-low 有源器件。 |
-| `Ssd1306` | 四行缓存文本与分段刷新 | I2C1 DMA 一次一包；调用方不得在 ISR 刷新。 |
+| `Ssd1306` | 四行缓存文本与分段刷新 | I2C1 DMA 一次一包；调用方不得在 ISR 刷新。`service()` 帧缓冲已完全同步（无脏行）时返回 `Ok`（空闲），有待处理传输时返回 `Busy`，以便区分"空闲"与"传输中"。 |
 
-`Mpu6050` 是原始 14-byte burst 驱动，输出 accel（g）和 gyro（deg/s），供软件姿态后端使用。
+`Mpu6050` 是原始 14-byte burst 驱动，输出 accel（g）和 gyro（deg/s），供软件姿态后端使用。构造函数接受可选 I2C 地址（`0x68` AD0 低 / `0x69` AD0 高）；默认 `0` 时 `begin()` 依次探测两个合法地址并按 WHO_AMI（`0x68`）确认。`begin()` 在 raw/software-filter 后端下显式唤醒并写入采样默认值：DLPF=3（44 Hz accel / 42 Hz gyro 带宽，抑制混叠）、`SMPLRT_DIV=9`（约 100 Hz，匹配 `AttitudeFilter` 假设的 10 ms 轮询）、量程保持 ±2 g / ±250 dps，因此 `poll()` 灵敏度（`kAccelSensitivity=16384`、`kGyroSensitivity=131`）不变。`temp_out` 字节（`0x41/0x42`）当前管线未使用。DMP 后端会自行重配这些寄存器，故上述写入仅对软件后端生效。
 
 `Mpu6050Dmp` 初始化 MPU FIFO、100 Hz DMP、6-axis quaternion、calibrated gyro，并转换为 `ImuSample`。DMP 与原始驱动互斥，Application 只初始化选中的一个。
 
