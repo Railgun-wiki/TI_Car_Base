@@ -180,6 +180,9 @@ car::Status i2cOledDmaStatus() noexcept {
 } // namespace bsp
 
 extern "C" void I2C1_IRQHandler(void) {
+  // OLED I2C (I2C1) TX-complete path. RX is handled in the controller-mode
+  // polling code above via DL_I2C_fillControllerTXFIFO; this handler only
+  // finalizes DMA-driven OLED writes. Intentionally narrow scope.
   switch (DL_I2C_getPendingInterrupt(I2C_OLED_INST)) {
   case DL_I2C_IIDX_CONTROLLER_TX_DONE:
     if (g_oledDma.busy)

@@ -137,8 +137,10 @@ car::Status Ssd1306::service() noexcept {
         break;
       }
     }
+    // Nothing to refresh this cycle — the framebuffer is fully synced. Return
+    // Ok (not Busy) so callers can distinguish "idle" from "transfer pending".
     if (!dirty_[activeRow_])
-      return car::Status::Busy;
+      return car::Status::Ok;
   }
 
   if (phase_ < 3U) {
