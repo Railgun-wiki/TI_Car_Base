@@ -13,6 +13,10 @@ extern "C" {
 namespace {
 constexpr float kQ30 = 1073741824.0F;
 constexpr float kDegrees = 57.2957795F;
+// Upper bound on FIFO drain iterations. At 100 Hz DMP + 100 Hz poll cadence
+// backlog is at most 1-2 frames; 8 is a generous guard against a runaway
+// `more` flag wedging the control loop.
+constexpr std::uint8_t kMaxDrainIterations = 8U;
 unsigned short orientationScalar() noexcept {
   // Vehicle frame: X forward, Y left, Z up. Confirm after physical mounting.
   return 0U | (1U << 3U) | (2U << 6U);
@@ -57,11 +61,12 @@ car::Status Mpu6050Dmp::poll(car::ImuSample &sample) noexcept {
   long quaternion[4]{};
   unsigned long timestamp = 0U;
   unsigned char more = 0U;
+  std::uint8_t iterationsLeft = kMaxDrainIterations;
   do {
     if (dmp_read_fifo(gyro, accel, quaternion, &timestamp, &sensors, &more) !=
         0)
       return car::Status::Busy;
-  } while (more != 0U);
+  } while (more != 0U && --iterationsLeft != 0U);
   if ((static_cast<unsigned short>(sensors) & INV_WXYZ_QUAT) == 0U)
     return car::Status::Busy;
 
