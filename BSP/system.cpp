@@ -34,5 +34,11 @@ void init() noexcept {
   (void)SysTick_Config(80000000UL / 1000UL);
 }
 std::uint32_t millis() noexcept { return g_millis; }
+void delayMs(std::uint32_t ms) noexcept {
+  const std::uint32_t start = g_millis;
+  while (g_millis - start < ms) {
+    // Wait for the next SysTick tick; reads of g_millis are volatile.
+  }
+}
 } // namespace bsp
 extern "C" void SysTick_Handler(void) { ++g_millis; }

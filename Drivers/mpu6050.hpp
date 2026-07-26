@@ -1,8 +1,16 @@
 #pragma once
 #include "Common/types.hpp"
 namespace drivers {
+
+// LSB/(°/s) at ±250 dps; LSB/g at ±2 g. Matches MPU-6000/6050 default range.
+constexpr float kAccelSensitivity = 16384.0F;
+constexpr float kGyroSensitivity = 131.0F;
+
 class Mpu6050 final {
 public:
+  // addr: 0x68 (AD0 low, board default) or 0x69 (AD0 high). Auto-probes both
+ // if left at the default of 0.
+  explicit Mpu6050(std::uint8_t addr = 0U) noexcept : address_(addr) {}
   car::Status begin() noexcept;
   car::Status poll(car::ImuSample &sample) noexcept;
   // Blocks for samples*delayMs while averaging static gyro bias. The car must
@@ -14,6 +22,7 @@ public:
 
 private:
   bool ready_ = false;
+  std::uint8_t address_ = 0U;
   float gyroBiasX_ = 0.0F;
   float gyroBiasY_ = 0.0F;
   float gyroBiasZ_ = 0.0F;
