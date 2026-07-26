@@ -42,9 +42,10 @@ void CarApplication::init() noexcept {
 #else
   imuReady_ = rawImu_.begin() == car::Status::Ok;
   // Static gyro bias calibration. The car must be stationary during init();
-  // a failure is non-fatal — poll() simply runs with the previous bias.
-  if (imuReady_)
-    (void)rawImu_.calibrateGyroBias();
+  // a failure downgrades imuReady_ so downstream consumers refuse to start,
+  // mirroring the H-question startup-state handling.
+  if (imuReady_ && rawImu_.calibrateGyroBias() != car::Status::Ok)
+    imuReady_ = false;
   softwareAttitude_.reset();
 #endif
   oledReady_ = oled_.begin() == car::Status::Ok;
