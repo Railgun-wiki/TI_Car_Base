@@ -60,7 +60,26 @@ const std::uint8_t *glyph(char character) noexcept {
 namespace drivers {
 
 car::Status Ssd1306::begin() noexcept {
-  static constexpr std::uint8_t kInit[] = {0xAE, 0x20, 0x00, 0xA8, 0x3F, 0xAF};
+  // 128x64 SSD1306 power-up sequence. 0x8D/0x14 (charge pump) is decisive:
+  // without it every command ACKs but the glass stays dark.
+  static constexpr std::uint8_t kInit[] = {
+      0xAE,       // display off
+      0xD5, 0x80, // clock divide / oscillator
+      0xA8, 0x3F, // multiplex 1/64
+      0xD3, 0x00, // display offset
+      0x40,       // start line
+      0x8D, 0x14, // charge pump enable (required for panel light)
+      0x20, 0x02, // page addressing (matches service())
+      0xA1,       // segment remap
+      0xC8,       // COM scan direction
+      0xDA, 0x12, // COM pins (128x64)
+      0x81, 0xCF, // contrast
+      0xD9, 0xF1, // precharge period
+      0xDB, 0x40, // VCOMH deselect
+      0xA4,       // display from RAM
+      0xA6,       // normal (non-inverted)
+      0xAF        // display on
+  };
   for (const std::uint8_t commandByte : kInit) {
     if (command(commandByte) != car::Status::Ok)
       return car::Status::BusError;
