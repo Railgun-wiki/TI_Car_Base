@@ -24,8 +24,10 @@ LED1–LED3 并鸣叫 30 ms；鸣叫结束后三盏状态 LED 同时熄灭。随
 已经就绪，按顺序输出 `BOOT`、I2C0/I2C1 的 `0x08..0x77` ACK 列表及 timeout/error
 统计。每一条日志都在 TX ring 与硬件 FIFO 排空后才进入下一阶段。
 
-仅当扫描到 I2C0 `0x68` 才初始化 MPU DMP；仅当扫描到 I2C1 `0x3C` 才初始化 OLED。
-完成后 LED1 表示至少一个设备成功，LED2 表示两个设备都成功，LED3 始终熄灭。最终
+仅当扫描到 I2C0 `0x68` 才初始化 MPU；默认使用原始 MPU6050 加 complementary software
+filter（可通过 `ATTITUDE_CONFIG_BACKEND` 切回 DMP 或 Kalman）。仅当扫描到 I2C1 `0x3C`
+才初始化 OLED。每个设备完成初始化便立即更新 LED：LED1 表示至少一个设备成功，LED2
+表示两个设备都成功，LED3 始终熄灭。最终
 日志为 `BOOT READY DEVICES=2` 或 `BOOT DEGRADED DEVICES=n`；在这之前不会运行菜单、
 按键启动或电机控制。DMP 初始化仍是启动期唯一较长的同步操作。
 

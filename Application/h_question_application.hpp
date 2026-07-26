@@ -8,8 +8,11 @@
 #include "Drivers/led.hpp"
 #include "Drivers/line_sensor_array.hpp"
 #include "Drivers/motor_driver.hpp"
+#include "Drivers/mpu6050.hpp"
 #include "Drivers/mpu6050_dmp.hpp"
 #include "Drivers/ssd1306.hpp"
+#include "Middlewares/attitude_backend_config.h"
+#include "Middlewares/attitude_filter.hpp"
 #include "Middlewares/differential_drive.hpp"
 #include "Middlewares/h_question_race.hpp"
 #include "Middlewares/line_follower.hpp"
@@ -65,6 +68,7 @@ private:
   void formatScanLog(std::uint8_t bus, const I2cScan &scan) noexcept;
   void formatDeviceLog(const char *device, bool expectedPresent,
                        bool initialized) noexcept;
+  void updateDeviceLeds() noexcept;
   void configureRace() noexcept;
   void updateImu() noexcept;
   void processKeys(std::uint32_t now) noexcept;
@@ -81,7 +85,15 @@ private:
   drivers::Keypad keys_{};
   drivers::Led leds_{};
   drivers::ActiveBuzzer buzzer_{};
-  drivers::Mpu6050Dmp imu_{};
+  drivers::Mpu6050 rawImu_{};
+  drivers::Mpu6050Dmp dmpImu_{};
+  middleware::AttitudeFilter softwareAttitude_{
+#if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_KALMAN
+      {middleware::AttitudeAlgorithm::Kalman}
+#else
+      {middleware::AttitudeAlgorithm::Complementary}
+#endif
+  };
   drivers::Ssd1306 oled_{};
   middleware::LineFollower lineFollower_{{45.0F, 0.0F, 0.0F, 250}};
   middleware::Pid headingPid_{{18.0F, 0.0F, 0.2F, 350.0F, 50.0F}};
@@ -96,6 +108,9 @@ private:
   std::uint32_t lastOledTextMs_ = 0U;
   std::uint32_t lastOledServiceMs_ = 0U;
   std::uint32_t startupSinceMs_ = 0U;
+#if ATTITUDE_CONFIG_BACKEND != ATTITUDE_BACKEND_DMP
+  std::uint32_t lastImuMs_ = 0U;
+#endif
   StartupState startupState_ = StartupState::Tone;
   I2cScan i2c0Scan_{};
   I2cScan i2c1Scan_{};

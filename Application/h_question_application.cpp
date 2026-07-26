@@ -146,6 +146,12 @@ void HQuestionApplication::configureRace() noexcept {
   race_ = middleware::HQuestionRace{raceConfig_};
 }
 
+void HQuestionApplication::updateDeviceLeds() noexcept {
+  leds_.setStatus(0U, imuReady_ || oledReady_);
+  leds_.setStatus(1U, imuReady_ && oledReady_);
+  leds_.setStatus(2U, false);
+}
+
 void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
   switch (startupState_) {
   case StartupState::Tone:
@@ -201,7 +207,11 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
     return;
   case StartupState::MpuStartLog:
     if (i2c0Scan_.contains(0x68U)) {
+#if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
       if (queueStartupLog("MPU 0x68 INIT DMP...\r\n"))
+#else
+      if (queueStartupLog("MPU 0x68 INIT SW FILTER...\r\n"))
+#endif
         startupState_ = StartupState::WaitMpuStartLog;
     } else if (queueStartupLog("MPU 0x68 SKIP NOT FOUND\r\n"))
       startupState_ = StartupState::OledStartLog;
@@ -211,11 +221,21 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
       startupState_ = StartupState::MpuInit;
     return;
   case StartupState::MpuInit:
-    imuReady_ = imu_.begin() == car::Status::Ok;
+#if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
+    imuReady_ = dmpImu_.begin() == car::Status::Ok;
+#else
+    imuReady_ = rawImu_.begin() == car::Status::Ok;
+    softwareAttitude_.reset();
+#endif
     startupState_ = StartupState::MpuResultLog;
     return;
   case StartupState::MpuResultLog:
+    updateDeviceLeds();
+#if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
     formatDeviceLog("MPU 0x68 INIT DMP", true, imuReady_);
+#else
+    formatDeviceLog("MPU 0x68 INIT SW FILTER", true, imuReady_);
+#endif
     if (queueStartupLog(startupLog_))
       startupState_ = StartupState::WaitMpuResultLog;
     return;
@@ -239,6 +259,7 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
     startupState_ = StartupState::OledResultLog;
     return;
   case StartupState::OledResultLog:
+    updateDeviceLeds();
     formatDeviceLog("OLED 0x3C INIT", true, oledReady_);
     if (queueStartupLog(startupLog_))
       startupState_ = StartupState::WaitOledResultLog;
@@ -248,9 +269,7 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
       startupState_ = StartupState::ReadyLog;
     return;
   case StartupState::ReadyLog: {
-    leds_.setStatus(0U, imuReady_ || oledReady_);
-    leds_.setStatus(1U, imuReady_ && oledReady_);
-    leds_.setStatus(2U, false);
+    updateDeviceLeds();
     configureRace();
     const std::uint8_t devices = static_cast<std::uint8_t>(imuReady_) +
                                  static_cast<std::uint8_t>(oledReady_);
@@ -277,9 +296,19 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
 void HQuestionApplication::updateImu() noexcept {
   if (!imuReady_ || !bsp::consumeImuDataReady())
     return;
-  imu_.notifyDataReady();
   car::ImuSample sample{};
-  const car::Status status = imu_.poll(sample);
+#if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
+  dmpImu_.notifyDataReady();
+  const car::Status status = dmpImu_.poll(sample);
+#else
+  const car::Status status = rawImu_.poll(sample);
+  const std::uint32_t now = bsp::millis();
+  const std::uint32_t dtMs = lastImuMs_ == 0U ? 10U : now - lastImuMs_;
+  lastImuMs_ = now;
+  sample.timestampMs = now;
+  if (status == car::Status::Ok)
+    (void)softwareAttitude_.update(sample, static_cast<float>(dtMs) / 1000.0F);
+#endif
   if (status == car::Status::Ok) {
     imuSample_ = sample;
   } else if (status != car::Status::Busy) {

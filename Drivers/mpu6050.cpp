@@ -3,15 +3,22 @@
 namespace {
 constexpr std::uint8_t kAddress = 0x68U;
 constexpr std::uint8_t kWhoAmI = 0x75U;
+constexpr std::uint8_t kPowerMgmt1 = 0x6BU;
 constexpr std::uint8_t kAccelXoutH = 0x3BU;
 } // namespace
 
 namespace drivers {
 
 car::Status Mpu6050::begin() noexcept {
+  // The MPU powers up asleep. DMP initialization wakes it internally, whereas
+  // the raw/software-filter backend must do so explicitly.
+  constexpr std::uint8_t kWake = 0x00U;
+  car::Status status =
+      ::bsp::i2cWriteRegister(0U, kAddress, kPowerMgmt1, &kWake, 1U);
+  if (status != car::Status::Ok)
+    return status;
   std::uint8_t id = 0U;
-  const car::Status status =
-      ::bsp::i2cReadRegister(0U, kAddress, kWhoAmI, &id, 1U);
+  status = ::bsp::i2cReadRegister(0U, kAddress, kWhoAmI, &id, 1U);
   ready_ = status == car::Status::Ok && id == 0x68U;
   return status != car::Status::Ok
              ? status

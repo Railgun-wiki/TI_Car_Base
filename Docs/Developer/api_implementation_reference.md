@@ -353,15 +353,15 @@ extern "C" void GPIOB_IRQHandler(void);
 在 `Middlewares/attitude_backend_config.h` 设置：
 
 ```c
-#define ATTITUDE_CONFIG_BACKEND ATTITUDE_BACKEND_DMP
-// ATTITUDE_BACKEND_COMPLEMENTARY
+#define ATTITUDE_CONFIG_BACKEND ATTITUDE_BACKEND_COMPLEMENTARY
+// ATTITUDE_BACKEND_DMP
 // ATTITUDE_BACKEND_KALMAN
 ```
 
 | 后端 | Driver | 后续处理 | 适用性 |
 | --- | --- | --- | --- |
-| DMP | `Mpu6050Dmp` | eMPL FIFO quaternion 直接转 Euler | 默认实车路径，MCU 开销小。 |
-| Complementary | `Mpu6050` | `AttitudeFilter(Complementary)` | 调试与快速验证。 |
+| DMP | `Mpu6050Dmp` | eMPL FIFO quaternion 直接转 Euler | MCU 开销小。 |
+| Complementary（默认） | `Mpu6050` | `AttitudeFilter(Complementary)` | 调试与快速验证。 |
 | Kalman | `Mpu6050` | `AttitudeFilter(Kalman)` | 参数对比与噪声评估。 |
 
 三个后端均依赖 MPU data-ready 通知；当前原始 `Mpu6050::poll()` 虽由 data-ready 触发，但本身读取寄存器而非 FIFO。切换后端至少应构建目标后端，并检查 DMP vendor source 的编译门是否与配置保持一致。

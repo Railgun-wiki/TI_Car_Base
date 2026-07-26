@@ -41,8 +41,8 @@ firmware、FIFO parser、寄存器流程或姿态算法。DMP 使用 100 Hz、6-
 quaternion 和 calibrated gyro；yaw 是相对航向，不能视为绝对航向。
 
 `Middlewares/attitude_backend_config.h` 的
-`ATTITUDE_CONFIG_BACKEND` 可选 `ATTITUDE_BACKEND_DMP`（默认）、
-`ATTITUDE_BACKEND_COMPLEMENTARY` 与 `ATTITUDE_BACKEND_KALMAN`。
+`ATTITUDE_CONFIG_BACKEND` 默认使用 `ATTITUDE_BACKEND_COMPLEMENTARY`，也可选
+`ATTITUDE_BACKEND_DMP` 与 `ATTITUDE_BACKEND_KALMAN`。
 三者都输出相同的 `ImuSample`；软件滤波使用 MPU6050 原始采样，不编译
 eMPL 主体。互补滤波适合轻量、快速验证，Kalman 为每轴 angle+bias 二状态；
 两者都只有 6-axis 相对 yaw。
