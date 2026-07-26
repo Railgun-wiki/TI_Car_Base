@@ -6,7 +6,7 @@
 
 | 目录 | 主入口 | 内容边界 |
 | --- | --- | --- |
-| `Application/` | [car_application.md](Application/car_application.md) | 当前应用初始化、调度、循线 Demo 和 VOFA+ 行为。 |
+| `Application/` | [car_application.md](Application/car_application.md) / [h_question_application.md](Application/h_question_application.md) | 巡线 Demo、H 题四程序 App、调度和交互。 |
 | `BSP/` | [platform.md](BSP/platform.md) | DriverLib/SysConfig 板级实现、ISR 与通信约束。 |
 | `Drivers/` | [devices.md](Drivers/devices.md) | 设备语义接口、MPU 原始与 DMP 驱动边界。 |
 | `Middlewares/` | [control.md](Middlewares/control.md) | PID、巡线、姿态、telemetry 与 VOFA+ 协议。 |

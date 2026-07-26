@@ -30,12 +30,21 @@
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "Application/app_selector.hpp"
+#if APP_ACTIVE == APP_LINE_FOLLOW
 #include "Application/car_application.hpp"
+#elif APP_ACTIVE == APP_H_QUESTION
+#include "Application/h_question_application.hpp"
+#endif
 #include "BSP/system.hpp"
 
 int main(void) {
   bsp::init();
+#if APP_ACTIVE == APP_LINE_FOLLOW
   app::CarApplication application{};
+#elif APP_ACTIVE == APP_H_QUESTION
+  app::HQuestionApplication application{};
+#endif
   application.init();
   while (1)
     application.step();

@@ -40,3 +40,12 @@ DMP 使用 MPU 内部姿态；软件后端使用原始驱动与 `AttitudeFilter`
 
 命令使用 ASCII，末尾必须是 `\n` 或 `\r\n`。数值支持普通十进制，不支持科学
 计数法。运行中修改返回 `err:RUNNING`，越界返回 `err:RANGE`。
+# H 题赛道状态机
+
+`HQuestionRace` 将 H 题的四条路径表示为纯 Middleware 状态机，不直接控制电机或
+读取 GPIO。它输出当前段类型、目标距离、相对 yaw 目标、圈数与状态；
+`HQuestionApplication` 决定使用巡线或 heading PID，并通过 `SafetyGate` 发布命令。
+
+状态为菜单、倒计时、运行、顶点暂停、完成和故障。运行段在目标距离 60% 后启用灰度
+辅助顶点判断，达到目标距离必然结束该段。所有物理量在 `RaceConfig` 统一管理，默认
+参数仅用于构建和初始调试，必须实车标定。
