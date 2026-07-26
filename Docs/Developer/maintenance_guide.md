@@ -63,6 +63,7 @@ W25Q128 的 PB6..PB9、板载 PB21 key 和 PA18 BSL 不纳入本固件，原因�
 #define ATTITUDE_CONFIG_BACKEND ATTITUDE_BACKEND_COMPLEMENTARY
 // ATTITUDE_BACKEND_DMP
 // ATTITUDE_BACKEND_KALMAN
+// ATTITUDE_BACKEND_MAHONY
 ```
 
 | 后端 | 数据路径 | 适用场景 | 限制 |
@@ -70,6 +71,7 @@ W25Q128 的 PB6..PB9、板载 PB21 key 和 PA18 BSL 不纳入本固件，原因�
 | DMP（默认） | MPU FIFO -> eMPL -> quaternion/Euler | 正常实车运行 | 6-axis yaw 仍为相对值。 |
 | Complementary | 原始 accel + gyro | 快速验证、最小资源 | yaw 积分漂移。 |
 | Kalman | 每轴 angle+bias 二状态 | 对比调参与噪声测试 | 仅 roll/pitch 融合，yaw 积分漂移。 |
+| Mahony | 四元数 + PI 修正 + 启动静态零偏 | 实车主用、直线抗漂移 | 需启动时静止 1 s 标定；无温度补偿。 |
 
 `ThirdParty/eMPL` 不得修改 firmware 数组、FIFO parser 或寄存器算法。允许的
 portability patch 仅限：添加 `EMPL_TARGET_MSPM0` 分支、Target 编译包围和

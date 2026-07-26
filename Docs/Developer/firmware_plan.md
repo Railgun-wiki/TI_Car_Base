@@ -42,10 +42,11 @@ quaternion 和 calibrated gyro；yaw 是相对航向，不能视为绝对航向�
 
 `Middlewares/attitude_backend_config.h` 的
 `ATTITUDE_CONFIG_BACKEND` 默认使用 `ATTITUDE_BACKEND_COMPLEMENTARY`，也可选
-`ATTITUDE_BACKEND_DMP` 与 `ATTITUDE_BACKEND_KALMAN`。
+`ATTITUDE_BACKEND_DMP`、`ATTITUDE_BACKEND_KALMAN` 与 `ATTITUDE_BACKEND_MAHONY`。
 三者都输出相同的 `ImuSample`；软件滤波使用 MPU6050 原始采样，不编译
-eMPL 主体。互补滤波适合轻量、快速验证，Kalman 为每轴 angle+bias 二状态；
-两者都只有 6-axis 相对 yaw。
+eMPL 主体。互补滤波适合轻量、快速验证，Kalman 为每轴 angle+bias 二状态，
+Mahony 为四元数 + PI 修正陀螺零偏（参考 SJTU-AuTop）；三者都只有 6-axis 相对 yaw，
+Mahony 的 yaw 稳定性优于纯积分。
 
 `EncoderSpeedEstimator` 的初值来自 Wheeltec C07A：65 mm 轮径、28:1
 减速比、13 CPR、2x 软件解码。该配置仅作起点，必须以本车实测值替换。闭环

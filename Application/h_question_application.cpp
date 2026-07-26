@@ -223,12 +223,27 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
   case StartupState::MpuInit:
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
     imuReady_ = dmpImu_.begin() == car::Status::Ok;
+    startupState_ = StartupState::MpuResultLog;
 #else
     imuReady_ = rawImu_.begin() == car::Status::Ok;
     softwareAttitude_.reset();
+    if (imuReady_) {
+      startupState_ = StartupState::MpuCalibrate;
+      return;
+    }
+    startupState_ = StartupState::MpuResultLog;
 #endif
+    return;
+  case StartupState::MpuCalibrate: {
+    // Blocks ~1 s while averaging gyro bias. The car must be stationary.
+    // Failure downgrades imuReady_ so the H-question gate refuses to start.
+    const car::Status status = rawImu_.calibrateGyroBias();
+    softwareAttitude_.reset();
+    if (status != car::Status::Ok)
+      imuReady_ = false;
     startupState_ = StartupState::MpuResultLog;
     return;
+  }
   case StartupState::MpuResultLog:
     updateDeviceLeds();
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP

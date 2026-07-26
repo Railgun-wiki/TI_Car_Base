@@ -42,6 +42,7 @@ private:
     MpuStartLog,
     WaitMpuStartLog,
     MpuInit,
+    MpuCalibrate,
     MpuResultLog,
     WaitMpuResultLog,
     OledStartLog,
@@ -90,6 +91,8 @@ private:
   middleware::AttitudeFilter softwareAttitude_{
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_KALMAN
       {middleware::AttitudeAlgorithm::Kalman}
+#elif ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_MAHONY
+      {middleware::AttitudeAlgorithm::Mahony}
 #else
       {middleware::AttitudeAlgorithm::Complementary}
 #endif

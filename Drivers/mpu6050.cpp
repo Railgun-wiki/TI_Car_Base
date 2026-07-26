@@ -1,5 +1,6 @@
 #include "Drivers/mpu6050.hpp"
 #include "BSP/i2c.hpp"
+#include "BSP/system.hpp"
 namespace {
 constexpr std::uint8_t kAddress = 0x68U;
 constexpr std::uint8_t kWhoAmI = 0x75U;
@@ -38,13 +39,40 @@ car::Status Mpu6050::poll(car::ImuSample &sample) noexcept {
   sample = {readInt16(raw) / 16384.0F,
             readInt16(raw + 2) / 16384.0F,
             readInt16(raw + 4) / 16384.0F,
-            readInt16(raw + 8) / 131.0F,
-            readInt16(raw + 10) / 131.0F,
-            readInt16(raw + 12) / 131.0F,
+            readInt16(raw + 8) / 131.0F - gyroBiasX_,
+            readInt16(raw + 10) / 131.0F - gyroBiasY_,
+            readInt16(raw + 12) / 131.0F - gyroBiasZ_,
             0.0F,
             0.0F,
             0.0F,
             0U};
+  return car::Status::Ok;
+}
+
+car::Status Mpu6050::calibrateGyroBias(std::uint16_t samples,
+                                       std::uint16_t delayMs) noexcept {
+  if (samples == 0U)
+    return car::Status::InvalidArgument;
+  float sumX = 0.0F, sumY = 0.0F, sumZ = 0.0F;
+  for (std::uint16_t i = 0U; i < samples; ++i) {
+    std::uint8_t raw[14]{};
+    if (::bsp::i2cReadRegister(0U, kAddress, kAccelXoutH, raw, sizeof(raw)) !=
+        car::Status::Ok)
+      return car::Status::BusError;
+    const auto readInt16 = [](const std::uint8_t *bytes) {
+      return static_cast<std::int16_t>(
+          (static_cast<std::uint16_t>(bytes[0]) << 8U) | bytes[1]);
+    };
+    sumX += readInt16(raw + 8) / 131.0F;
+    sumY += readInt16(raw + 10) / 131.0F;
+    sumZ += readInt16(raw + 12) / 131.0F;
+    const std::uint32_t start = bsp::millis();
+    while (static_cast<std::uint32_t>(bsp::millis() - start) < delayMs) {
+    }
+  }
+  gyroBiasX_ = sumX / static_cast<float>(samples);
+  gyroBiasY_ = sumY / static_cast<float>(samples);
+  gyroBiasZ_ = sumZ / static_cast<float>(samples);
   return car::Status::Ok;
 }
 
