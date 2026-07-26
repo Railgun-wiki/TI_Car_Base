@@ -4,9 +4,9 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `system.*` | SysConfig 初始化、80 MHz SysTick 1 ms、PWM 启动。 |
-| `i2c.*` | I2C0 轮询超时事务；I2C1 OLED 异步 DMA 发送；支持 DMP firmware 的流式 FIFO 写入。 |
-| `uart.*` | UART0 RX/TX interrupt、固定 ring buffer 和整帧 best-effort enqueue。 |
+| `system.*` | 手工排序的 SysConfig 初始化、80 MHz SysTick 1 ms、PWM 启动。 |
+| `i2c.*` | I2C0 轮询超时事务和仅启动期使用的 address-only probe；I2C1 OLED 异步 DMA 发送；支持 DMP firmware 的流式 FIFO 写入。 |
+| `uart.*` | UART0 RX/TX interrupt、固定 ring buffer、整帧 best-effort enqueue 与 TX-drain 查询。 |
 | `motor.*` | TB6612 方向、PWM、死区与停止。 |
 | `input.*` / `indicator.*` | 灰度、按键、LED、蜂鸣器原始电平。 |
 | `encoder.*` | 软件正交计数和 MPU data-ready ISR 分发。 |
@@ -17,6 +17,15 @@ IMU flag；`UART0_IRQHandler` 只在硬件 FIFO 与 256-byte TX / 128-byte RX
 ring buffer 之间搬运数据。ISR 内禁止 I2C、DMP、PID、OLED、UART 格式化和动态
 分配。TX ring 空间不足时丢弃完整帧，RX ring 满时丢弃新 byte，并分别累计 drop
 counter。
+
+`bsp::init()` 不直接调用生成的 `SYSCFG_DL_init()`，而是按生成函数手工排列为
+Power/GPIO/SYSCTL/PWM → UART0 → I2C0/I2C1 → 其余 UART/DMA/clock。这样 UART0
+可在外设探测前输出启动日志。**若 SysConfig 配置发生变更，必须核对生成的
+`SYSCFG_DL_init()` 并同步此手工列表，确保没有漏掉新增初始化函数。**
+
+`i2cProbe()` 以 0-byte controller quick command 扫描地址，默认 timeout 为 1 ms；
+它只供 Application 的启动自检调用，运行态不扫描总线。启动日志每一帧都等待
+`uartTxIdle()`，避免 256-byte TX ring 满而丢失诊断内容。
 
 MSPM0 I2C FIFO 为 8 byte。MPU 的 I2C0 保持轮询：`i2cWriteRegister()` 在单次
 事务中补充 TX FIFO，供 eMPL 写 DMP memory；读取持续排空 RX FIFO。每次事务检查

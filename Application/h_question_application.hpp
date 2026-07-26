@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "Drivers/active_buzzer.hpp"
 #include "Drivers/encoder.hpp"
 #include "Drivers/keypad.hpp"
@@ -22,9 +24,52 @@ public:
   void step() noexcept;
 
 private:
+  enum class StartupState : std::uint8_t {
+    Tone,
+    BootLog,
+    WaitBootLog,
+    UartLog,
+    WaitUartLog,
+    ScanI2c0,
+    I2c0Log,
+    WaitI2c0Log,
+    ScanI2c1,
+    I2c1Log,
+    WaitI2c1Log,
+    MpuStartLog,
+    WaitMpuStartLog,
+    MpuInit,
+    MpuResultLog,
+    WaitMpuResultLog,
+    OledStartLog,
+    WaitOledStartLog,
+    OledInit,
+    OledResultLog,
+    WaitOledResultLog,
+    ReadyLog,
+    WaitReadyLog,
+    Ready,
+  };
+  struct I2cScan final {
+    std::array<std::uint8_t, 8U> addresses{};
+    std::uint8_t count = 0U;
+    std::uint16_t timeouts = 0U;
+    std::uint16_t errors = 0U;
+    std::uint32_t elapsedMs = 0U;
+    bool contains(std::uint8_t address) const noexcept;
+  };
+
+  void startupStep(std::uint32_t now) noexcept;
+  void scanI2c(std::uint8_t bus, I2cScan &scan) noexcept;
+  bool queueStartupLog(const char *text) noexcept;
+  void formatScanLog(std::uint8_t bus, const I2cScan &scan) noexcept;
+  void formatDeviceLog(const char *device, bool expectedPresent,
+                       bool initialized) noexcept;
+  void configureRace() noexcept;
   void updateImu() noexcept;
   void processKeys(std::uint32_t now) noexcept;
   void updateControl(std::uint32_t now) noexcept;
+  void updateUserLed(std::uint32_t now) noexcept;
   void refreshOled(std::uint32_t now) noexcept;
   void submitMenu(const middleware::HRaceSnapshot &race) noexcept;
   void submitRun(const middleware::HRaceSnapshot &race) noexcept;
@@ -47,13 +92,20 @@ private:
   car::ImuSample imuSample_{};
   car::WheelCommand proposal_{};
   std::uint32_t lastControlMs_ = 0U;
+  std::uint32_t lastUserLedPulseMs_ = 0U;
   std::uint32_t lastOledTextMs_ = 0U;
   std::uint32_t lastOledServiceMs_ = 0U;
+  std::uint32_t startupSinceMs_ = 0U;
+  StartupState startupState_ = StartupState::Tone;
+  I2cScan i2c0Scan_{};
+  I2cScan i2c1Scan_{};
+  char startupLog_[128]{};
   bool centerWasPressed_ = false;
   bool leftWasPressed_ = false;
   bool rightWasPressed_ = false;
   bool imuReady_ = false;
   bool oledReady_ = false;
+  bool userLedOn_ = false;
 };
 
 } // namespace app

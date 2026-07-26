@@ -34,6 +34,24 @@ void finishOledDma(car::Status status) noexcept {
 }
 } // namespace
 namespace bsp {
+car::Status i2cProbe(std::uint8_t bus, std::uint8_t address,
+                     std::uint32_t timeout) noexcept {
+  I2C_Regs *i = instance(bus);
+  if (!idle(i, timeout))
+    return car::Status::Timeout;
+
+  DL_I2C_resetControllerTransfer(i);
+  DL_I2C_flushControllerTXFIFO(i);
+  DL_I2C_startControllerTransfer(i, address, DL_I2C_CONTROLLER_DIRECTION_TX,
+                                 0U);
+  delay_cycles(3U); // MSPM0 I2C_ERR_13.
+  const auto start = millis();
+  while ((DL_I2C_getControllerStatus(i) & DL_I2C_CONTROLLER_STATUS_BUSY) != 0U)
+    if (static_cast<std::uint32_t>(millis() - start) >= timeout)
+      return car::Status::Timeout;
+  return result(i);
+}
+
 car::Status i2cWrite(std::uint8_t bus, std::uint8_t address,
                      const std::uint8_t *data, std::size_t length,
                      std::uint32_t timeout) noexcept {

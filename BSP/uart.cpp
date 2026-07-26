@@ -69,6 +69,16 @@ bool uartTryWrite(const char *data, std::size_t length) noexcept {
   return true;
 }
 
+bool uartTxIdle() noexcept {
+  const std::uint32_t interruptState = __get_PRIMASK();
+  __disable_irq();
+  const bool idle =
+      g_txHead == g_txTail && DL_UART_Main_isTXFIFOEmpty(UART_CONSOLE_INST);
+  if (interruptState == 0U)
+    __enable_irq();
+  return idle;
+}
+
 bool uartTryRead(std::uint8_t &byte) noexcept {
   if (g_rxTail == g_rxHead)
     return false;

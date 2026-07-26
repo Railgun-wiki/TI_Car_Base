@@ -3,6 +3,9 @@
 #include <cstddef>
 #include <cstdint>
 namespace bsp {
+// Address-only controller quick command. Intended for boot diagnostics only.
+car::Status i2cProbe(std::uint8_t bus, std::uint8_t address,
+                     std::uint32_t timeoutMs = 1U) noexcept;
 car::Status i2cWrite(std::uint8_t bus, std::uint8_t address,
                      const std::uint8_t *data, std::size_t length,
                      std::uint32_t timeoutMs = 5U) noexcept;
