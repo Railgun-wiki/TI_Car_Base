@@ -23,6 +23,8 @@ public:
   void step() noexcept;
 
 private:
+  void processKeyInteraction() noexcept;
+  void refreshOled(std::uint32_t now) noexcept;
   drivers::MotorDriver motor_{};
   drivers::LineSensorArray line_{};
   drivers::Encoder encoder_{};
@@ -49,8 +51,13 @@ private:
   std::uint32_t lastLineMs_ = 0U;
   std::uint32_t lastTelemetryMs_ = 0U;
   std::uint32_t lastHeartbeatMs_ = 0U;
+  std::uint32_t lastOledTextMs_ = 0U;
+  std::uint32_t lastOledServiceMs_ = 0U;
   std::uint32_t centerSinceMs_ = 0U;
   bool centerWasPressed_ = false;
+  bool leftWasPressed_ = false;
+  bool rightWasPressed_ = false;
+  bool downWasPressed_ = false;
   bool imuReady_ = false;
 #if ATTITUDE_CONFIG_BACKEND != ATTITUDE_BACKEND_DMP
   std::uint32_t lastImuMs_ = 0U;

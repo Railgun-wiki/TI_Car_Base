@@ -13,6 +13,7 @@
 /**
  * Import the modules used in this configuration.
  */
+const DMA    = scripting.addModule("/ti/driverlib/DMA");
 const GPIO   = scripting.addModule("/ti/driverlib/GPIO", {}, false);
 const GPIO1  = GPIO.addInstance();
 const GPIO2  = GPIO.addInstance();
@@ -37,6 +38,8 @@ const UART4  = UART.addInstance();
 /**
  * Write custom configuration values to the imported modules.
  */
+const Board = scripting.addModule("/ti/driverlib/Board", {}, false);
+
 GPIO1.$name                         = "GPIO_MOTOR_DIR";
 GPIO1.associatedPins.create(4);
 GPIO1.associatedPins[0].$name       = "AIN1";
@@ -47,8 +50,6 @@ GPIO1.associatedPins[2].$name       = "BIN1";
 GPIO1.associatedPins[2].pin.$assign = "PB9";
 GPIO1.associatedPins[3].$name       = "BIN2";
 GPIO1.associatedPins[3].pin.$assign = "PB7";
-
-const Board = scripting.addModule("/ti/driverlib/Board", {}, false);
 
 GPIO2.$name                         = "GPIO_LINE_SENSOR";
 GPIO2.associatedPins.create(8);
@@ -167,6 +168,8 @@ I2C1.sclPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
 I2C2.$name                             = "I2C_OLED";
 I2C2.basicEnableController             = true;
 I2C2.basicControllerStandardBusSpeed   = "Fast";
+I2C2.DMAEvent1                         = "CONTROLLER_TXFIFO_TRIGGER";
+I2C2.intController                     = ["ARBITRATION_LOST","NACK","TX_DONE"];
 I2C2.peripheral.sdaPin.$assign         = "PB3";
 I2C2.peripheral.sclPin.$assign         = "PB2";
 I2C2.sdaPinConfig.hideOutputInversion  = scripting.forceWrite(false);
@@ -177,6 +180,11 @@ I2C2.sclPinConfig.hideOutputInversion  = scripting.forceWrite(false);
 I2C2.sclPinConfig.onlyInternalResistor = scripting.forceWrite(false);
 I2C2.sclPinConfig.passedPeripheralType = scripting.forceWrite("Digital");
 I2C2.sclPinConfig.$name                = "ti_driverlib_gpio_GPIOPinGeneric13";
+I2C2.DMA_CHANNEL_EVENT1.$name          = "DMA_OLED_TX";
+I2C2.DMA_CHANNEL_EVENT1.addressMode    = "b2f";
+I2C2.DMA_CHANNEL_EVENT1.srcLength      = "BYTE";
+I2C2.DMA_CHANNEL_EVENT1.dstLength      = "BYTE";
+I2C2.DMA_CHANNEL_EVENT1.transferMode   = "SINGLE_BLOCK";
 
 PWM1.$name                              = "PWM_MOTOR";
 PWM1.timerCount                         = 8000;
@@ -280,18 +288,19 @@ UART4.rxPinConfig.$name                = "ti_driverlib_gpio_GPIOPinGeneric11";
  * version of the tool will not impact the pinmux you originally saw.  These lines can be completely deleted in order to
  * re-solve from scratch.
  */
-Board.peripheral.$suggestSolution            = "DEBUGSS";
-Board.peripheral.swclkPin.$suggestSolution   = "PA20";
-Board.peripheral.swdioPin.$suggestSolution   = "PA19";
-I2C1.peripheral.$suggestSolution             = "I2C0";
-I2C2.peripheral.$suggestSolution             = "I2C1";
-PWM2.peripheral.$suggestSolution             = "TIMG12";
-SYSCTL.peripheral.$suggestSolution           = "SYSCTL";
-SYSCTL.peripheral.lfxInPin.$suggestSolution  = "PA3";
-SYSCTL.peripheral.lfxOutPin.$suggestSolution = "PA4";
-SYSCTL.peripheral.hfxInPin.$suggestSolution  = "PA5";
-SYSCTL.peripheral.hfxOutPin.$suggestSolution = "PA6";
-UART1.peripheral.$suggestSolution            = "UART0";
-UART2.peripheral.$suggestSolution            = "UART3";
-UART3.peripheral.$suggestSolution            = "UART2";
-UART4.peripheral.$suggestSolution            = "UART1";
+Board.peripheral.$suggestSolution                   = "DEBUGSS";
+Board.peripheral.swclkPin.$suggestSolution          = "PA20";
+Board.peripheral.swdioPin.$suggestSolution          = "PA19";
+I2C1.peripheral.$suggestSolution                    = "I2C0";
+I2C2.peripheral.$suggestSolution                    = "I2C1";
+I2C2.DMA_CHANNEL_EVENT1.peripheral.$suggestSolution = "DMA_CH0";
+PWM2.peripheral.$suggestSolution                    = "TIMG12";
+SYSCTL.peripheral.$suggestSolution                  = "SYSCTL";
+SYSCTL.peripheral.lfxInPin.$suggestSolution         = "PA3";
+SYSCTL.peripheral.lfxOutPin.$suggestSolution        = "PA4";
+SYSCTL.peripheral.hfxInPin.$suggestSolution         = "PA5";
+SYSCTL.peripheral.hfxOutPin.$suggestSolution        = "PA6";
+UART1.peripheral.$suggestSolution                   = "UART0";
+UART2.peripheral.$suggestSolution                   = "UART3";
+UART3.peripheral.$suggestSolution                   = "UART2";
+UART4.peripheral.$suggestSolution                   = "UART1";

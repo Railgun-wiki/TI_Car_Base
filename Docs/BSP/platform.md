@@ -5,7 +5,7 @@
 | 文件 | 职责 |
 | --- | --- |
 | `system.*` | SysConfig 初始化、80 MHz SysTick 1 ms、PWM 启动。 |
-| `i2c.*` | I2C0/I2C1 同步超时事务；支持 DMP firmware 的流式 FIFO 写入。 |
+| `i2c.*` | I2C0 轮询超时事务；I2C1 OLED 异步 DMA 发送；支持 DMP firmware 的流式 FIFO 写入。 |
 | `uart.*` | UART0 RX/TX interrupt、固定 ring buffer 和整帧 best-effort enqueue。 |
 | `motor.*` | TB6612 方向、PWM、死区与停止。 |
 | `input.*` / `indicator.*` | 灰度、按键、LED、蜂鸣器原始电平。 |
@@ -18,4 +18,13 @@ ring buffer 之间搬运数据。ISR 内禁止 I2C、DMP、PID、OLED、UART 格
 分配。TX ring 空间不足时丢弃完整帧，RX ring 满时丢弃新 byte，并分别累计 drop
 counter。
 
-MSPM0 I2C FIFO 为 8 byte。`i2cWriteRegister()` 在单次事务中补充 TX FIFO，供 eMPL 写 DMP memory；读取持续排空 RX FIFO。每次事务检查 idle、错误和 timeout，并执行 I2C_ERR_13 短延时。物理 SCL/SDA 被拉低后的 GPIO bus-recovery 尚未实现。
+MSPM0 I2C FIFO 为 8 byte。MPU 的 I2C0 保持轮询：`i2cWriteRegister()` 在单次
+事务中补充 TX FIFO，供 eMPL 写 DMP memory；读取持续排空 RX FIFO。每次事务检查
+idle、错误和 timeout，并执行 I2C_ERR_13 短延时。
+
+OLED 的 I2C1 使用 SysConfig 配置的 TX FIFO DMA Event 1。`i2cOledWriteDma()`
+只在 controller idle 时配置 DMA 源地址、`MTXDATA` 目的地址和传输长度，随后立即
+返回；`I2C1_IRQHandler` 只在 TX Done、NACK 或 arbitration-lost 时记录最终状态并
+关闭 DMA channel。调用者必须在 DMA 完成前保持源 buffer 有效，并轮询
+`i2cOledDmaStatus()`；它在超时后复位 controller 并返回 `Timeout`。物理 SCL/SDA
+被拉低后的 GPIO bus-recovery 尚未实现。

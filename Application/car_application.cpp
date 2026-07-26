@@ -5,6 +5,9 @@
 
 namespace app {
 namespace {
+constexpr std::int16_t kDefaultCruise = 180;
+constexpr std::int16_t kCruiseStep = 10;
+
 void sendText(const char *text) noexcept {
   if (text == nullptr)
     return;
@@ -12,6 +15,17 @@ void sendText(const char *text) noexcept {
   while (text[length] != '\0')
     ++length;
   (void)bsp::uartTryWrite(text, length);
+}
+
+void formatCruise(char *text, std::int16_t cruise) noexcept {
+  text[0] = 'S';
+  text[1] = 'P';
+  text[2] = 'D';
+  text[3] = ':';
+  text[4] = static_cast<char>('0' + cruise / 100);
+  text[5] = static_cast<char>('0' + (cruise / 10) % 10);
+  text[6] = static_cast<char>('0' + cruise % 10);
+  text[7] = '\0';
 }
 } // namespace
 
@@ -33,6 +47,56 @@ void CarApplication::init() noexcept {
   leds_.setStatus(1U, imuReady_);
   leds_.setStatus(2U, oledReady_);
 }
+
+void CarApplication::processKeyInteraction() noexcept {
+  const bool left = keys_.pressed(car::Key::Left);
+  const bool right = keys_.pressed(car::Key::Right);
+  const bool down = keys_.pressed(car::Key::Down);
+  const bool leftPressed = left && !leftWasPressed_;
+  const bool rightPressed = right && !rightWasPressed_;
+  const bool downPressed = down && !downWasPressed_;
+  leftWasPressed_ = left;
+  rightWasPressed_ = right;
+  downWasPressed_ = down;
+
+  // Configuration is deliberately unavailable while the safety gate permits
+  // motion. This makes the five-way keypad useful without weakening the
+  // CENTER + UP hold-to-run interlock.
+  if (lineFollowEnabled_ || (!leftPressed && !rightPressed && !downPressed))
+    return;
+
+  const auto config = follower_.config();
+  std::int16_t cruise = config.cruise;
+  if (leftPressed && cruise >= kCruiseStep)
+    cruise = static_cast<std::int16_t>(cruise - kCruiseStep);
+  if (rightPressed && cruise <= 500 - kCruiseStep)
+    cruise = static_cast<std::int16_t>(cruise + kCruiseStep);
+  if (downPressed)
+    cruise = kDefaultCruise;
+  if (cruise != config.cruise)
+    (void)follower_.configure(config.kp, config.ki, config.kd, cruise);
+}
+
+void CarApplication::refreshOled(std::uint32_t now) noexcept {
+  if (!oledReady_)
+    return;
+  if (static_cast<std::uint32_t>(now - lastOledTextMs_) >= 100U) {
+    lastOledTextMs_ = now;
+    char cruise[8]{};
+    formatCruise(cruise, follower_.config().cruise);
+    (void)oled_.writeLine(0U, lineFollowEnabled_ ? "MODE:RUN" : "MODE:HOLD");
+    (void)oled_.writeLine(1U, cruise);
+    (void)oled_.writeLine(2U, lineSample_.detected ? "LINE:OK" : "LINE:LOST");
+    (void)oled_.writeLine(3U, imuReady_ ? "IMU:OK" : "IMU:ERR");
+  }
+  if (static_cast<std::uint32_t>(now - lastOledServiceMs_) >= 2U) {
+    lastOledServiceMs_ = now;
+    const car::Status status = oled_.service();
+    if (status != car::Status::Ok && status != car::Status::Busy)
+      oledReady_ = false;
+  }
+}
+
 void CarApplication::step() noexcept {
   const std::uint32_t now = bsp::millis();
   if (static_cast<std::uint32_t>(now - lastLineMs_) >= 5U) {
@@ -76,6 +140,7 @@ void CarApplication::step() noexcept {
       center && static_cast<std::uint32_t>(now - centerSinceMs_) >= 500U;
   lineFollowEnabled_ = armed && keys_.pressed(car::Key::Up);
   motor_.set(gate_.apply(lineWheelCommand_, lineFollowEnabled_));
+  processKeyInteraction();
 
   std::uint8_t rxByte = 0U;
   middleware::VofaCommand vofaCommand{};
@@ -120,12 +185,7 @@ void CarApplication::step() noexcept {
             motor_.command(), follower_.config(), lineFollowEnabled_, imuReady_,
             bsp::uartRxDroppedBytes(), bsp::uartTxDroppedFrames()))
       sendText(text);
-    if (oledReady_) {
-      const char *status = "HOLD CENTER+UP";
-      if (lineFollowEnabled_)
-        status = lineSample_.detected ? "LINE FOLLOWING" : "LINE LOST";
-      (void)oled_.writeLine(status);
-    }
   }
+  refreshOled(now);
 }
 } // namespace app

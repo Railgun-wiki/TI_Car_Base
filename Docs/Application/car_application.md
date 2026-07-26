@@ -19,7 +19,18 @@
 | VOFA+ telemetry | 20 Hz | UART ring 满时丢弃完整帧。 |
 | VOFA+ command | 主循环轮询 | 仅停车时更新循线参数。 |
 | LED 心跳 | 2 Hz 翻转 | 表示 superloop 仍运行。 |
-| OLED | 低优先级 | 不得影响电机/IMU 路径。 |
+| OLED | 100 ms 更新文本、2 ms 推进一包 | I2C1 DMA；每次 `step()` 不等待传输完成。 |
+
+## OLED 与五向按键交互
+
+- OLED 四行显示 `MODE`、`SPD`、`LINE`、`IMU`；字符缓存由 Driver 保存，显示
+  数据以最多 8 byte 的 I2C1 DMA 包发送。
+- CENTER 连续按住 500 ms 后，仍必须同时按住 UP 才可运行；该安全语义不因 UI
+  功能改变。
+- 停车时，LEFT/RIGHT 分别以 10 调整巡线 cruise，范围 `0..500`；DOWN 恢复
+  默认值 180。运行时忽略这三个调参键，避免误操作改变电机输出。
+- `Keypad` 在 Driver 层以 20 ms 去抖，故按键按下和释放最多额外引入 20 ms
+  软件确认延迟；CENTER/UP 松开后仍由 `SafetyGate` 输出零轮速。
 
 ## 循线 Demo
 
@@ -47,8 +58,22 @@ RX/TX drop counter。姿态单位为 degree；6-axis yaw 是相对航向，会�
 调参命令和范围见 `Docs/Middlewares/control.md`。串口 RX/TX ISR 只搬运固定
 ring buffer，命令解析、参数更新和帧格式化都在主循环。
 
+## 阻塞审计
+
+| 位置 | 最长影响 | 当前处置 |
+| --- | --- | --- |
+| `CarApplication::init()` 上电蜂鸣器 | 30 ms，仅启动 | 保留；电机已先停止。 |
+| eMPL/DMP 初始化与 I2C0 轮询 | 单次事务 20 ms；仅初始化或 MPU data-ready 后 | 按当前需求保留 MPU 轮询；通信错误会停机。 |
+| `BSP/i2c.cpp` 的 I2C0 FIFO 等待 | `timeoutMs`，默认 5 ms、DMP port 为 20 ms | 仅 MPU 使用；不在 ISR 执行。 |
+| UART RX 命令 drain | 与已积压字节数成正比 | 当前无单轮预算；高吞吐命令流可能延长一次 superloop。 |
+| OLED I2C1 刷新 | 无等待；单次仅启动 DMA | 已消除运行态 busy-wait；DMA timeout 为 2 ms，ISR 只置最终状态。 |
+
+因此当前控制周期的主要残余风险是 MPU 轮询与无预算 UART RX drain，而不是 OLED。
+若实机测得 5 ms 巡线周期抖动，下一步应将 MPU 轮询改为非阻塞状态机，或限制每轮
+UART 解析字节数；两者都不应放入 ISR。
+
 ## 验证状态
 
-- 已构建：2026-07-25 使用 CCS `buildProject` 完成 Debug 构建，无 errors/warnings；
+- 已构建：2026-07-26 使用 CCS `buildProject` 完成 Debug 构建，无 errors/warnings；
 - 待实机验证：灰度高/低电平极性、左右传感器顺序、电机正方向、急弯差速、
-  丢线停车距离以及 CENTER + UP 松手停车时延。
+  丢线停车距离、CENTER + UP 松手停车时延、OLED DMA 刷新和按键去抖。
