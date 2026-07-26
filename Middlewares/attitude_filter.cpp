@@ -1,7 +1,9 @@
 #include "Middlewares/attitude_filter.hpp"
 #include <cmath>
+#include <cstring>
 namespace {
-constexpr float kDegrees = 57.2957795F;
+constexpr float kDegPerRad = 57.2957795F;
+constexpr float kRadPerDeg = 0.0174532925F;
 }
 namespace middleware {
 void AttitudeFilter::reset() noexcept {
@@ -39,27 +41,30 @@ float AttitudeFilter::updateKalman(KalmanAxis &axis, float measured, float rate,
 car::Status AttitudeFilter::update(car::ImuSample &sample, float dt) noexcept {
   if (dt <= 0.0F || dt > 0.1F)
     return car::Status::InvalidArgument;
-  const float rollAcc = std::atan2(sample.ay, sample.az) * kDegrees;
+  const float rollAcc = std::atan2(sample.ay, sample.az) * kDegPerRad;
   const float pitchAcc =
       std::atan2(-sample.ax,
                  std::sqrt(sample.ay * sample.ay + sample.az * sample.az)) *
-      kDegrees;
+      kDegPerRad;
   if (!initialized_) {
     roll_.angle = rollAcc;
     pitch_.angle = pitchAcc;
     initialized_ = true;
   }
-  if (config_.algorithm == AttitudeAlgorithm::Kalman) {
+  switch (config_.algorithm) {
+  case AttitudeAlgorithm::Kalman:
     sample.rollDeg = updateKalman(roll_, rollAcc, sample.gx, dt);
     sample.pitchDeg = updateKalman(pitch_, pitchAcc, sample.gy, dt);
-  } else {
+    break;
+  case AttitudeAlgorithm::Complementary: {
     const float w = config_.complementaryGyroWeight;
     roll_.angle = w * (roll_.angle + sample.gx * dt) + (1.0F - w) * rollAcc;
     pitch_.angle = w * (pitch_.angle + sample.gy * dt) + (1.0F - w) * pitchAcc;
     sample.rollDeg = roll_.angle;
     sample.pitchDeg = pitch_.angle;
+    break;
   }
-  if (config_.algorithm == AttitudeAlgorithm::Mahony) {
+  case AttitudeAlgorithm::Mahony:
     updateMahony(sample, dt);
     return car::Status::Ok;
   }
@@ -74,24 +79,28 @@ float AttitudeFilter::fastInvSqrt(float x) noexcept {
   // ~1% error is absorbed by accelerometer normalization.
   const float halfx = 0.5F * x;
   float y = x;
-  long i = *reinterpret_cast<long *>(&y);
+  long i;
+  std::memcpy(&i, &y, sizeof(i));
   i = 0x5f3759df - (i >> 1);
-  y = *reinterpret_cast<float *>(&i);
+  std::memcpy(&y, &i, sizeof(y));
   y = y * (1.5F - (halfx * y * y));
   return y;
 }
 
 void AttitudeFilter::updateMahony(car::ImuSample &sample, float dt) noexcept {
-  constexpr float kRadPerDeg = 0.0174532925F; // PI/180
-  constexpr float kDegPerRad = 57.2957795F;   // 180/PI
   const float gx = sample.gx * kRadPerDeg;
   const float gy = sample.gy * kRadPerDeg;
   const float gz = sample.gz * kRadPerDeg;
-  const float normRecip = fastInvSqrt(
-      sample.ax * sample.ax + sample.ay * sample.ay + sample.az * sample.az);
-  const float ax = sample.ax * normRecip;
-  const float ay = sample.ay * normRecip;
-  const float az = sample.az * normRecip;
+  const float normSq =
+      sample.ax * sample.ax + sample.ay * sample.ay + sample.az * sample.az;
+  // Degenerate input (free-fall or dropped frame): disable the accelerometer
+  // cross-product correction and integrate gyro only, otherwise
+  // fastInvSqrt(0) yields NaN and corrupts the quaternion state.
+  const bool accValid = normSq > 1e-9F;
+  const float normRecip = accValid ? fastInvSqrt(normSq) : 0.0F;
+  const float ax = accValid ? sample.ax * normRecip : 0.0F;
+  const float ay = accValid ? sample.ay * normRecip : 0.0F;
+  const float az = accValid ? sample.az * normRecip : 1.0F;
 
   // Estimated gravity direction from current quaternion.
   const float vx = 2.0F * (q1_ * q3_ - q0_ * q2_);
@@ -99,9 +108,9 @@ void AttitudeFilter::updateMahony(car::ImuSample &sample, float dt) noexcept {
   const float vz = q0_ * q0_ - q1_ * q1_ - q2_ * q2_ + q3_ * q3_;
 
   // Cross-product error between measured and estimated gravity.
-  const float ex = ay * vz - az * vy;
-  const float ey = az * vx - ax * vz;
-  const float ez = ax * vy - ay * vx;
+  const float ex = accValid ? (ay * vz - az * vy) : 0.0F;
+  const float ey = accValid ? (az * vx - ax * vz) : 0.0F;
+  const float ez = accValid ? (ax * vy - ay * vx) : 0.0F;
 
   const float halfT = 0.5F * dt;
   iEx_ += halfT * ex;
