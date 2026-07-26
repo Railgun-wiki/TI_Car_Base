@@ -16,8 +16,13 @@ void init() noexcept {
   SYSCFG_DL_PWM_MOTOR_init();
   SYSCFG_DL_PWM_MOTOR_B_init();
   SYSCFG_DL_UART_CONSOLE_init();
+  // SysConfig enables the UART peripheral interrupt source but does not enable
+  // its NVIC line. The boot logger needs this before its first 17-byte frame.
+  NVIC_EnableIRQ(UART_CONSOLE_INST_INT_IRQN);
   SYSCFG_DL_I2C_MPU6050_init();
   SYSCFG_DL_I2C_OLED_init();
+  // OLED DMA completion is finalized by I2C1_IRQHandler.
+  NVIC_EnableIRQ(I2C_OLED_INST_INT_IRQN);
   SYSCFG_DL_UART3_MODULE_init();
   SYSCFG_DL_UART2_MODULE_init();
   SYSCFG_DL_UART1_MODULE_init();
