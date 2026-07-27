@@ -18,15 +18,18 @@ main()
 
 `CarApplication` 独占 `MotorDriver`，因此只有 Application 能把最终的轮端命令
 写到 PWM。`LineFollower`、`Pid` 与 `DifferentialDrive` 已接入循线 Demo；
-`EncoderSpeedEstimator` 仍只计算数据，编码器速度闭环尚未接入。
+H 题应用已将 `EncoderSpeedEstimator`、左右 `Pid` 封装为
+`WheelSpeedController`，在 5 ms 控制链中每 50 ms 将左右目标 mm/s 闭环为 PWM 命令。
 
 数据方向如下：
 
 ```text
 GPIO gray -> LineSensorArray -> LineSample -> LineFollower -> VehicleCommand
 encoder ISR -> Encoder -> EncoderTicks -> EncoderSpeedEstimator -> WheelSpeed
+  -> WheelSpeedController -> WheelCommand
 MPU I2C/FIFO -> Mpu6050/Mpu6050Dmp/Bmi270 (all implement ImuBackend) -> ImuSample -> ImuReader+AttitudeFilter (software backend); DMP or Bmi270+FUSION -> ImuSample with Euler directly
-line-follow wheel proposal -> SafetyGate -> MotorDriver -> BSP PWM + TB6612
+line-follow/heading speed targets -> WheelSpeedController -> SafetyGate
+  -> MotorDriver -> BSP PWM + TB6612
 ```
 
 所有公开接口均为 `noexcept`。失败不通过异常上抛，而是以 `car::Status` 返回；调用方必须显式检查。
@@ -89,7 +92,7 @@ void step() noexcept;
 | 每 500 ms | 翻转用户 LED | 仅表示 superloop 活着。 |
 | 每 50 ms | 格式化 VOFA+ telemetry，并更新第一行 OLED | UART ring 空间不足时丢弃完整帧；OLED 单次失败目前未清除 `oledReady_`。 |
 
-当前 Demo 已接入巡线 PID 和差速混合，速度 PI 尚未接入。候选命令始终先通过
+H 题已接入巡线 PID、航向 PID、差速混合和双轮速度 PID。候选命令始终先通过
 `SafetyGate`；实车运行前仍需完成《维护手册》的方向、灰度和 PID 标定。
 
 ## 4. Middleware：可脱板测试的算法层
@@ -159,7 +162,20 @@ metersPerCount     = π * wheelDiameterMeters / countsPerWheelTurn
 speed              = (currentTicks - previousTicks) * metersPerCount / dtSeconds
 ```
 
-若 `dt == 0`，返回零速度且不推进历史样本。默认参数是 Wheeltec C07A 的暂定值（65 mm、28:1、13 CPR、2x），不能直接作为闭环标定结果。
+若 `dt == 0`，返回零速度且不推进历史样本。H 题速度闭环采用 48 mm、1456 counts/轮的
+暂定配置，不能直接作为闭环标定结果。
+
+### `middleware::WheelSpeedController`
+
+```cpp
+WheelSpeedController(WheelSpeedControllerConfig config = {}) noexcept;
+WheelCommand update(EncoderTicks ticks, uint32_t nowMs,
+                    WheelCommand targetMmPerSecond) noexcept;
+void reset() noexcept;
+```
+
+每轮独立 PID 的输入与目标均为 mm/s，输出为 `[-1000,1000]` PWM 命令。状态切换到
+非运行态时必须调用 `reset()`，以清除测速历史、积分和微分历史。
 
 ### `middleware::AttitudeFilter`
 
@@ -410,7 +426,7 @@ extern "C" void GPIOB_IRQHandler(void);
 - 线传感极性、DMP 安装轴、左右电机正方向、编码器符号/倍率、轮径和 PID 均为待实机验证项。
 - Keypad 尚无消抖，OLED 尚无通用字库/多页 framebuffer。
 - I2C 超时会返回，但尚无物理总线恢复；DMP FIFO overflow 仅 reset FIFO 后等待下一包。
-- `Pid`、`LineFollower` 和 `DifferentialDrive` 已接入循线 Demo；编码器速度闭环
-  尚未接入。
+- H 题已接入 `WheelSpeedController`；其轮径、编码器倍率、速度 PID 与电机/编码器方向
+  仍待实机验证。
 
 这些限制是当前安全分阶段策略的一部分。新增功能时应同步更新本文档、对应模块文档与上板验收记录。

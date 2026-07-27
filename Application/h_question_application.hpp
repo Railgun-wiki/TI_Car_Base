@@ -16,6 +16,7 @@
 #include "Middlewares/line_follower.hpp"
 #include "Middlewares/pid.hpp"
 #include "Middlewares/safety_gate.hpp"
+#include "Middlewares/wheel_speed_controller.hpp"
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
 #include "Drivers/mpu6050_dmp.hpp"
 #elif ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_BMI270
@@ -116,8 +117,14 @@ private:
 #endif
   };
   drivers::Ssd1306 oled_{};
-  middleware::LineFollower lineFollower_{{45.0F, 0.0F, 0.0F, 250}};
-  middleware::Pid headingPid_{{18.0F, 0.0F, 0.2F, 350.0F, 50.0F}};
+  middleware::LineFollower lineFollower_{{30.0F, 2.0F, 15.0F, 50}};
+  middleware::Pid headingPid_{{10.0F, 1.0F, 3.0F, 60.0F, 50.0F}};
+  middleware::WheelSpeedController speedController_{{
+      {0.048F, 1.0F, 1040.0F, 1.0F},
+      {2.0F, 1.0F, 0.0F, 250.0F, 20.0F},
+      {2.0F, 1.0F, 0.0F, 250.0F, 20.0F},
+      50U,
+  }};
   middleware::DifferentialDrive drive_{{0.15F}};
   middleware::SafetyGate gate_{};
   middleware::HQuestionRace race_{};
@@ -139,6 +146,7 @@ private:
   bool imuReady_ = false;
   bool oledReady_ = false;
   bool userLedOn_ = false;
+  bool autoStartPending_ = true;
 };
 
 } // namespace app
