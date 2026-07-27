@@ -1,18 +1,23 @@
 #include "BSP/encoder.hpp"
 #include "ti_msp_dl_config.h"
 namespace {
+static_assert(ENCODER_LEFT_DIRECTION == 1 || ENCODER_LEFT_DIRECTION == -1,
+              "ENCODER_LEFT_DIRECTION must be 1 or -1");
+static_assert(ENCODER_RIGHT_DIRECTION == 1 || ENCODER_RIGHT_DIRECTION == -1,
+              "ENCODER_RIGHT_DIRECTION must be 1 or -1");
+
 volatile std::int32_t leftTicks = 0, rightTicks = 0;
 volatile bool imuDue = false;
 std::uint8_t leftState = 0, rightState = 0;
 void update(volatile std::int32_t &ticks, std::uint8_t &previous,
-            std::uint8_t current) {
+            std::uint8_t current, std::int32_t direction) {
   const auto transition = static_cast<std::uint8_t>((previous << 2U) | current);
   if (transition == 1U || transition == 7U || transition == 14U ||
       transition == 8U)
-    ++ticks;
+    ticks += direction;
   if (transition == 2U || transition == 11U || transition == 13U ||
       transition == 4U)
-    --ticks;
+    ticks -= direction;
   previous = current;
 }
 void sample() {
@@ -30,8 +35,8 @@ void sample() {
       (DL_GPIO_readPins(GPIO_ENCODER_PORT, GPIO_ENCODER_ENCODER_RIGHT_B_PIN)
            ? 1U
            : 0U));
-  update(leftTicks, leftState, left);
-  update(rightTicks, rightState, right);
+  update(leftTicks, leftState, left, ENCODER_LEFT_DIRECTION);
+  update(rightTicks, rightState, right, ENCODER_RIGHT_DIRECTION);
 }
 } // namespace
 namespace bsp {
@@ -47,7 +52,11 @@ bool consumeImuDataReady() noexcept {
   return due;
 }
 } // namespace bsp
-extern "C" void GPIOB_IRQHandler(void) {
+extern "C" void GROUP1_IRQHandler(void) {
+  if (DL_Interrupt_getPendingGroup(DL_INTERRUPT_GROUP_1) !=
+      DL_INTERRUPT_GROUP1_IIDX_GPIOB)
+    return;
+
   const std::uint32_t enc =
       GPIO_ENCODER_ENCODER_LEFT_A_PIN | GPIO_ENCODER_ENCODER_LEFT_B_PIN |
       GPIO_ENCODER_ENCODER_RIGHT_A_PIN | GPIO_ENCODER_ENCODER_RIGHT_B_PIN;

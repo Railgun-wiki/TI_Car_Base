@@ -27,6 +27,8 @@ void init() noexcept {
   SYSCFG_DL_UART2_MODULE_init();
   SYSCFG_DL_UART1_MODULE_init();
   SYSCFG_DL_DMA_init();
+  // Encoder A/B edges and MPU data-ready share the GPIOB interrupt vector.
+  NVIC_EnableIRQ(GPIO_MULTIPLE_GPIOB_INT_IRQN);
   SYSCFG_DL_SYSCTL_CLK_init();
   stopMotors();
   startMotorPwm();

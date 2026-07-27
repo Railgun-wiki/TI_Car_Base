@@ -11,7 +11,7 @@
 // 切换跑道（黑线白底 / 白线黑底）或更换传感器板时，按实测电平在此翻转，
 // 不要改动 line_sensor_array.cpp 的权重逻辑。默认值匹配当前固件历史行为。
 #ifndef LINE_SENSOR_LINE_IS_HIGH
-#define LINE_SENSOR_LINE_IS_HIGH 1
+#define LINE_SENSOR_LINE_IS_HIGH 0
 #endif
 
 #if LINE_SENSOR_LINE_IS_HIGH != 0 && LINE_SENSOR_LINE_IS_HIGH != 1
