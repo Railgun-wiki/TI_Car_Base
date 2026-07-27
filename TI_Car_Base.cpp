@@ -35,6 +35,10 @@
 #include "Application/car_application.hpp"
 #elif APP_ACTIVE == APP_H_QUESTION
 #include "Application/h_question_application.hpp"
+#elif APP_ACTIVE == APP_IMU_OLED_TEST
+#include "Application/imu_oled_test_application.hpp"
+#elif APP_ACTIVE == APP_MOTOR_CENTER_TEST
+#include "Application/motor_center_test_application.hpp"
 #endif
 #include "BSP/system.hpp"
 
@@ -44,6 +48,10 @@ int main(void) {
   app::CarApplication application{};
 #elif APP_ACTIVE == APP_H_QUESTION
   app::HQuestionApplication application{};
+#elif APP_ACTIVE == APP_IMU_OLED_TEST
+  app::ImuOledTestApplication application{};
+#elif APP_ACTIVE == APP_MOTOR_CENTER_TEST
+  app::MotorCenterTestApplication application{};
 #endif
   application.init();
   while (1)

@@ -23,7 +23,7 @@ BMI270 初始化必须先 burst-write 8192 字节 vendor config blob（`ThirdPar
 `BMI270_ONBOARD_FUSION` 宏（默认 0）切换 `poll()` 语义：未定义/0 时只填 `ax..gz`（g、deg/s），Euler 留 0，走 `ImuReader`+`AttitudeFilter`（与 Mpu6050 一致）；为 1 时 `poll()` 内置 Mahony（移植自参考工程，含退化输入保护）直接填 `rollDeg/pitchDeg/yawDeg`，绕过 `AttitudeFilter`，dt 假设 ~100 Hz data-ready。状态：已构建，待实机验证（CHIP_ID、config 接受、量程/ODR、轴向、I2C 上拉）。
 | `Keypad` | active-low 稳定按键状态 | polling + 20 ms 去抖；长按/按下沿逻辑在 Application。 |
 | `Led` / `ActiveBuzzer` | 不暴露 GPIO 极性 | 蜂鸣器是 active-low 有源器件。 |
-| `Ssd1306` | 四行缓存文本与分段刷新 | I2C1 DMA 一次一包；调用方不得在 ISR 刷新。`service()` 帧缓冲已完全同步（无脏行）时返回 `Ok`（空闲），有待处理传输时返回 `Busy`，以便区分"空闲"与"传输中"。 |
+| `Ssd1306` | 128x64 的八行缓存文本与分段刷新 | I2C1 DMA 一次一包；调用方不得在 ISR 刷新。`service()` 帧缓冲已完全同步（无脏行）时返回 `Ok`（空闲），有待处理传输时返回 `Busy`，以便区分"空闲"与"传输中"。 |
 
 `Mpu6050` 实现 `ImuBackend`，是原始 14-byte burst 驱动，输出 accel（g）和 gyro（deg/s），供软件姿态后端使用。构造函数接受可选 I2C 地址（`0x68` AD0 低 / `0x69` AD0 高）；默认 `0` 时 `begin()` 依次探测两个合法地址并按 WHO_AMI（`0x68`）确认。`begin()` 在 raw/software-filter 后端下显式唤醒并写入采样默认值：DLPF=3（44 Hz accel / 42 Hz gyro 带宽，抑制混叠）、`SMPLRT_DIV=9`（约 100 Hz，匹配 `AttitudeFilter` 假设的 10 ms 轮询）、量程保持 ±2 g / ±250 dps，因此 `poll()` 灵敏度（`kAccelSensitivity=16384`、`kGyroSensitivity=131`）不变。`temp_out` 字节（`0x41/0x42`）当前管线未使用。DMP 后端会自行重配这些寄存器，故上述写入仅对软件后端生效。
 

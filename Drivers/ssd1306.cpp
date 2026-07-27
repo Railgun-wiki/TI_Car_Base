@@ -19,6 +19,8 @@ const std::uint8_t *glyph(char character) noexcept {
                                                 {0x06, 0x49, 0x49, 0x29, 0x1E},
                                                 {0, 0x36, 0x36, 0, 0},
                                                 {0x08, 0x08, 0x08, 0x08, 0x08},
+                                                {0x08, 0x08, 0x3E, 0x08, 0x08},
+                                                {0x00, 0x60, 0x60, 0x00, 0x00},
                                                 {0x7E, 0x11, 0x11, 0x11, 0x7E},
                                                 {0x7F, 0x49, 0x49, 0x49, 0x36},
                                                 {0x3E, 0x41, 0x41, 0x41, 0x22},
@@ -51,8 +53,12 @@ const std::uint8_t *glyph(char character) noexcept {
     return kGlyphs[11U];
   if (character == '-')
     return kGlyphs[12U];
+  if (character == '+')
+    return kGlyphs[13U];
+  if (character == '.')
+    return kGlyphs[14U];
   if (character >= 'A' && character <= 'Z')
-    return kGlyphs[13U + static_cast<std::uint8_t>(character - 'A')];
+    return kGlyphs[15U + static_cast<std::uint8_t>(character - 'A')];
   return kGlyphs[0U];
 }
 } // namespace
