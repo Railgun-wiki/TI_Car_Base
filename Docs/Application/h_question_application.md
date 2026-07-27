@@ -9,7 +9,7 @@ Drivers、BSP 和 Middleware，但不复用其业务状态或按键调速逻辑�
 | 程序 | 路径 |
 | --- | --- |
 | P1 | A→B |
-| P2 | A→B→C→D→A |
+| P2 | 巡线 500 cm |
 | P3 | A→C→B→D→A |
 | P4 | P3 连续 4 圈 |
 
@@ -39,12 +39,21 @@ filter（可通过 `ATTITUDE_CONFIG_BACKEND` 切回 DMP 或 Kalman）。软件�
 ## 控制和标定
 
 `HQuestionRace` 是不依赖硬件的状态机。直线/对角段按编码器平均绝对 tick 计算距离，
-并以 DMP 相对 yaw 做 heading PID；弧线段使用 `LineFollower`。每段超过目标距离
-60% 后启用灰度辅助顶点判断，目标距离为最终兜底。
+并以相对 yaw 做 heading PID；弧线段使用 `LineFollower`。每段超过目标距离 80% 后
+启用灰度辅助顶点判断：直线/对角需至少两路检测到黑线，弧线需全白，且提前触发需连续
+两个 5 ms 控制周期；目标距离为最终兜底。
 
-`RaceConfig` 的轮径、减速比、编码器分辨率、场地长度、航向角、速度和 heading PID
-是起始参数，均待实车标定。特别是编码器正方向、tick→厘米比例、yaw 正负方向和
-灰度极性未验证前，禁止将路径完成视为赛道验收。
+`RaceConfig` 的起始值使用 48 mm 轮径、28:1 减速比、13 线编码器和四倍频，即 1456
+counts/轮，场地长度为直线 100 cm、弧线 125.6 cm、对角 128 cm。直线/对角目标 200 mm/s，
+弧线目标 100 mm/s，任何一轮目标最低 80 mm/s。P2 是固定 500 cm 的巡线测试，仅由里程
+完成，避免短暂丢线误触发终点。`WheelSpeedController` 每 50 ms 使用编码器闭环输出 PWM；
+当前速度 PID 为 `Kp=2, Ki=1, Kd=0`，输出限幅为 700。这些均待实车标定。
+特别是编码器正方向、tick→厘米比例、yaw 正负方向和灰度极性未验证前，禁止将路径完成
+视为赛道验收。
+
+默认使用 LEFT/RIGHT 选择程序、CENTER 启动。可在
+`Application/h_question_application.cpp` 中设置 `H_QUESTION_AUTO_START_PROGRAM`：`0` 为菜单，
+`1..4` 在上电自检及 IMU 就绪后自动启动对应要求。
 
 ## 验证状态
 

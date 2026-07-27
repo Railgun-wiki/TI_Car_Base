@@ -3,13 +3,19 @@
 namespace {
 constexpr float kPi = 3.14159265F;
 
+std::uint8_t countActiveSensors(std::uint8_t bits) noexcept {
+  std::uint8_t count = 0U;
+  while (bits != 0U) {
+    count += static_cast<std::uint8_t>(bits & 1U);
+    bits >>= 1U;
+  }
+  return count;
+}
+
 constexpr middleware::HSegment kPath1[] = {
     {middleware::HSegmentType::Gap, 0.0F, 0.0F}};
 constexpr middleware::HSegment kPath2[] = {
-    {middleware::HSegmentType::Gap, 0.0F, 0.0F},
-    {middleware::HSegmentType::Arc, 0.0F, 0.0F},
-    {middleware::HSegmentType::Gap, 0.0F, 0.0F},
-    {middleware::HSegmentType::Arc, 0.0F, 0.0F},
+    {middleware::HSegmentType::Arc, 500.0F, 0.0F},
 };
 constexpr middleware::HSegment kPath3[] = {
     {middleware::HSegmentType::Diagonal, 0.0F, -38.7F},
@@ -37,6 +43,11 @@ void HQuestionRace::selectPrevious() noexcept {
       static_cast<HProgram>((static_cast<std::uint8_t>(program_) + 3U) % 4U);
 }
 
+void HQuestionRace::select(HProgram program) noexcept {
+  if (state_ == HRaceState::Menu)
+    program_ = program;
+}
+
 void HQuestionRace::start(std::uint32_t now, car::EncoderTicks ticks,
                           float yawDeg) noexcept {
   if (state_ != HRaceState::Menu && state_ != HRaceState::Finished)
@@ -56,7 +67,8 @@ void HQuestionRace::cancel() noexcept {
 void HQuestionRace::fail() noexcept { state_ = HRaceState::Fault; }
 
 HRaceSnapshot HQuestionRace::update(std::uint32_t now, car::EncoderTicks ticks,
-                                    float yawDeg, bool lineDetected) noexcept {
+                                    float yawDeg,
+                                    car::LineSample line) noexcept {
   if (state_ == HRaceState::Countdown &&
       static_cast<std::uint32_t>(now - stateSinceMs_) >= config_.countdownMs) {
     state_ = HRaceState::Running;
@@ -67,11 +79,23 @@ HRaceSnapshot HQuestionRace::update(std::uint32_t now, car::EncoderTicks ticks,
     const float targetDistance = targetDistanceCm();
     lastDistanceCm_ = traveled;
     const bool distanceReached = traveled >= targetDistance;
-    const bool sensorArmed = traveled >= targetDistance * 0.60F;
+    const bool sensorArmed =
+        traveled >= targetDistance * config_.endpointArmRatio;
     const bool sensorReached =
-        sensorArmed &&
-        (current.type == HSegmentType::Arc ? !lineDetected : lineDetected);
-    if (distanceReached || sensorReached) {
+        current.distanceCm <= 0.0F && sensorArmed &&
+        (current.type == HSegmentType::Arc
+             ? !line.detected
+             : countActiveSensors(line.bits) >= config_.minimumLineSensors);
+    if (distanceReached) {
+      endpointConfirmCount_ = 0U;
+    } else if (sensorReached) {
+      if (endpointConfirmCount_ < config_.endpointConfirmTicks)
+        ++endpointConfirmCount_;
+    } else {
+      endpointConfirmCount_ = 0U;
+    }
+    if (distanceReached ||
+        endpointConfirmCount_ >= config_.endpointConfirmTicks) {
       ++completedSegments_;
       stateSinceMs_ = now;
       state_ = completedSegments_ >= segmentCount() * lapCount()
@@ -108,6 +132,7 @@ void HQuestionRace::beginSegment(car::EncoderTicks ticks,
   segmentStartTicks_ = ticks;
   segmentYawOriginDeg_ = yawDeg;
   lastDistanceCm_ = 0.0F;
+  endpointConfirmCount_ = 0U;
 }
 
 float HQuestionRace::distanceCm(car::EncoderTicks ticks) const noexcept {
@@ -126,6 +151,8 @@ float HQuestionRace::distanceCm(car::EncoderTicks ticks) const noexcept {
 }
 
 float HQuestionRace::targetDistanceCm() const noexcept {
+  if (segment().distanceCm > 0.0F)
+    return segment().distanceCm;
   switch (segment().type) {
   case HSegmentType::Arc:
     return config_.arcLengthCm;
@@ -169,6 +196,7 @@ std::uint8_t HQuestionRace::segmentCount() const noexcept {
   case HProgram::Requirement1:
     return 1U;
   case HProgram::Requirement2:
+    return 1U;
   case HProgram::Requirement3:
   case HProgram::Requirement4:
     return 4U;
