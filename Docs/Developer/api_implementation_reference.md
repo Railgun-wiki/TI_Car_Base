@@ -25,7 +25,7 @@ main()
 ```text
 GPIO gray -> LineSensorArray -> LineSample -> LineFollower -> VehicleCommand
 encoder ISR -> Encoder -> EncoderTicks -> EncoderSpeedEstimator -> WheelSpeed
-MPU I2C/FIFO -> Mpu6050 or Mpu6050Dmp -> ImuSample -> AttitudeFilter (software backend)
+MPU I2C/FIFO -> Mpu6050/Mpu6050Dmp/Bmi270 (all implement ImuBackend) -> ImuSample -> ImuReader+AttitudeFilter (software backend); DMP or Bmi270+FUSION -> ImuSample with Euler directly
 line-follow wheel proposal -> SafetyGate -> MotorDriver -> BSP PWM + TB6612
 ```
 
@@ -83,7 +83,7 @@ void step() noexcept;
 | 条件/周期 | 动作 | 失败行为 |
 | --- | --- | --- |
 | 每 5 ms | 读取灰度，以固定 dt 执行巡线 PID 和差速混合 | 无命中时 PID reset 并发布零建议；灰度极性需实测。 |
-| `consumeImuDataReady()` 为真 | 调用选中 IMU 的 `poll()`；软件后端再调用 `AttitudeFilter::update()` | 除 `Ok`、`Busy` 外，置 `imuReady_ = false`、停止电机并打开蜂鸣器。 |
+| `consumeImuDataReady()` 为真 | 软件后端调 `ImuReader::step()`（内部 poll → dt → `AttitudeFilter::update`）；DMP 后端直接 `notifyDataReady`+`poll`；BMI270+`BMI270_ONBOARD_FUSION` 直接 `poll`（内置 Mahony） | 除 `Ok`、`Busy` 外，置 `imuReady_ = false`、停止电机并打开蜂鸣器。 |
 | CENTER 连按至少 500 ms | 解锁循线 Demo | 未解锁时 `SafetyGate` 始终输出零。 |
 | 解锁且 UP 按住 | 允许巡线轮端建议通过 `SafetyGate` | 松开 CENTER/UP 或丢线时立即写入零。 |
 | 每 500 ms | 翻转用户 LED | 仅表示 superloop 活着。 |
@@ -235,6 +235,8 @@ Driver 层可依赖 BSP，但不向上泄漏 DriverLib 或 SysConfig 宏。
 
 ### MPU6050 原始数据：`drivers::Mpu6050`
 
+实现 `drivers::ImuBackend`（`begin/poll/ready` 为虚方法，虚析构 `= default`）；`calibrateGyroBias` 是非虚具体方法，仅启动期调用。
+
 ```cpp
 explicit Mpu6050(std::uint8_t addr = 0U) noexcept;
 car::Status begin() noexcept;
@@ -247,6 +249,8 @@ bool ready() const noexcept;
 注意：`poll()` 当前不检查 `ready_`，因此正确用法是仅在 `begin()==Ok` 后调用；这也是该 Driver 的调用契约。
 
 ### MPU6050 DMP：`drivers::Mpu6050Dmp`
+
+同样实现 `drivers::ImuBackend`；`notifyDataReady` 是非虚具体方法，由 Application 在消费 data-ready 后调用。
 
 ```cpp
 car::Status begin() noexcept;
@@ -265,6 +269,23 @@ bool ready() const noexcept;
 4. Q30 quaternion 转 float，并以标准欧拉角公式计算 roll/pitch/yaw；accel 按 16384、gyro 按 16.4 进行缩放。
 
 `orientationScalar()` 采用车体坐标 `X` 前、`Y` 左、`Z` 上的映射假设。传感器安装方向不同会使姿态轴和符号错误，必须实机复核。6-axis DMP 的 yaw 是相对航向，不是绝对方向。
+
+### BMI270：`drivers::Bmi270`
+
+实现 `drivers::ImuBackend`；`calibrateGyroBias` 是非虚具体方法，仅启动期调用。由 `ATTITUDE_BACKEND_BMI270` 选中，I2C0 上替换 MPU6050（同地址 `0x68/0x69`，靠 `CHIP_ID (0x00)`=`0x24` 区分）。
+
+```cpp
+explicit Bmi270(std::uint8_t addr = 0U) noexcept;
+car::Status begin() noexcept override;
+car::Status poll(car::ImuSample &sample) noexcept override;
+car::Status calibrateGyroBias(std::uint16_t samples = 200U,
+                              std::uint16_t delayMs = 5U) noexcept;
+bool ready() const noexcept override;
+```
+
+`begin()` 先探测 `CHIP_ID`，再 disable advanced power-save，然后 burst-write 8192 字节 vendor config blob（`ThirdParty/bmi270/bmi270_config_file.h`）到 `INIT_DATA (0x5E)`（`INIT_CTRL` 0→1 包夹），读 `INTERNAL_STATUS (0x21)` 校验非零；config 写入传 `timeoutMs=500`（400 kHz 下约 200 ms）。随后写 `CMD=0x0E`（acc/gyro/temp en）、`NV_CONF=0`（I2C 模式）、量程/ODR：±2 g、±2000 dps、100 Hz、3 dB 滤波。注意 gyro ±2000 dps 的 `kGyroSensitivity=16.4` 是 MPU6050 ±250 dps（131）的 1/8，`AttitudeFilter` 参数实车可能需重标定。
+
+`poll()` 连读 accel 6B（`0x0C`）+ gyro 6B（`0x12`），小端 LSB-first（与 MPU6050 大端不同），除灵敏度并减零偏。`BMI270_ONBOARD_FUSION`（默认 0）为 0 时 Euler 留 0、走 `ImuReader`+`AttitudeFilter`；为 1 时内置 Mahony 直接填 Euler、绕过 `AttitudeFilter`（dt 假设 ~100 Hz，实车按 data-ready 率复核）。
 
 ### OLED：`drivers::Ssd1306`
 

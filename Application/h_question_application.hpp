@@ -8,8 +8,6 @@
 #include "Drivers/led.hpp"
 #include "Drivers/line_sensor_array.hpp"
 #include "Drivers/motor_driver.hpp"
-#include "Drivers/mpu6050.hpp"
-#include "Drivers/mpu6050_dmp.hpp"
 #include "Drivers/ssd1306.hpp"
 #include "Middlewares/attitude_backend_config.h"
 #include "Middlewares/attitude_filter.hpp"
@@ -18,6 +16,17 @@
 #include "Middlewares/line_follower.hpp"
 #include "Middlewares/pid.hpp"
 #include "Middlewares/safety_gate.hpp"
+#if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
+#include "Drivers/mpu6050_dmp.hpp"
+#elif ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_BMI270
+#include "Drivers/bmi270.hpp"
+#include "Drivers/imu_backend.hpp"
+#include "Middlewares/imu_reader.hpp"
+#else
+#include "Drivers/imu_backend.hpp"
+#include "Drivers/mpu6050.hpp"
+#include "Middlewares/imu_reader.hpp"
+#endif
 
 namespace app {
 
@@ -86,8 +95,17 @@ private:
   drivers::Keypad keys_{};
   drivers::Led leds_{};
   drivers::ActiveBuzzer buzzer_{};
-  drivers::Mpu6050 rawImu_{};
+#if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
   drivers::Mpu6050Dmp dmpImu_{};
+#elif ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_BMI270
+  drivers::Bmi270 rawImu_{};
+#if !BMI270_ONBOARD_FUSION
+  middleware::ImuReader imuReader_{};
+#endif
+#else
+  drivers::Mpu6050 rawImu_{};
+  middleware::ImuReader imuReader_{};
+#endif
   middleware::AttitudeFilter softwareAttitude_{
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_KALMAN
       {middleware::AttitudeAlgorithm::Kalman}
@@ -111,9 +129,6 @@ private:
   std::uint32_t lastOledTextMs_ = 0U;
   std::uint32_t lastOledServiceMs_ = 0U;
   std::uint32_t startupSinceMs_ = 0U;
-#if ATTITUDE_CONFIG_BACKEND != ATTITUDE_BACKEND_DMP
-  std::uint32_t lastImuMs_ = 0U;
-#endif
   StartupState startupState_ = StartupState::Tone;
   I2cScan i2c0Scan_{};
   I2cScan i2c1Scan_{};

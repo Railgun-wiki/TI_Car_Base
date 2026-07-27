@@ -46,7 +46,10 @@ void CarApplication::init() noexcept {
   // mirroring the H-question startup-state handling.
   if (imuReady_ && rawImu_.calibrateGyroBias() != car::Status::Ok)
     imuReady_ = false;
+#if ATTITUDE_CONFIG_BACKEND != ATTITUDE_BACKEND_BMI270 || !BMI270_ONBOARD_FUSION
+  imuReader_.reset();
   softwareAttitude_.reset();
+#endif
 #endif
   oledReady_ = oled_.begin() == car::Status::Ok;
   leds_.setStatus(1U, imuReady_);
@@ -116,14 +119,11 @@ void CarApplication::step() noexcept {
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
     dmpImu_.notifyDataReady();
     status = dmpImu_.poll(sample);
-#else
+#elif ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_BMI270 &&                    \
+    BMI270_ONBOARD_FUSION
     status = rawImu_.poll(sample);
-    const std::uint32_t dtMs = lastImuMs_ == 0U ? 10U : now - lastImuMs_;
-    lastImuMs_ = now;
-    sample.timestampMs = now;
-    if (status == car::Status::Ok)
-      status =
-          softwareAttitude_.update(sample, static_cast<float>(dtMs) / 1000.0F);
+#else
+    status = imuReader_.step(rawImu_, softwareAttitude_, now, sample);
 #endif
     // Empty FIFO around the interrupt edge is normal; a transport/FIFO error is
     // not and must return the car to its stopped state.

@@ -72,10 +72,25 @@ W25Q128 的 PB6..PB9、板载 PB21 key 和 PA18 BSL 不纳入本固件，原因�
 | DMP | MPU FIFO -> eMPL -> quaternion/Euler | 正常实车运行 | 6-axis yaw 仍为相对值。 |
 | Kalman | 每轴 angle+bias 二状态 | 对比调参与噪声测试 | 仅 roll/pitch 融合，yaw 积分漂移。 |
 | Mahony | 四元数 + PI 修正 + 启动静态零偏 | 实车主用、直线抗漂移 | 需启动时静止 1 s 标定；无温度补偿。 |
+| BMI270 | `Bmi270` (I2C0) 原始 accel + gyro，或 `BMI270_ONBOARD_FUSION` 内置 Mahony | 换用 BMI270 芯片 | 需 burst-write 8KB config blob；gyro ±2000dps，滤波参数需重标定。 |
 
 `ThirdParty/eMPL` 不得修改 firmware 数组、FIFO parser 或寄存器算法。允许的
 portability patch 仅限：添加 `EMPL_TARGET_MSPM0` 分支、Target 编译包围和
 `BSP/MPU6050/mpu6050_empl_port.*` 的外部映射。
+
+软件滤波后端（Complementary/Kalman/Mahony/BMI270 原始量模式）的采样路径统一经
+`Middlewares/imu_reader.{hpp,cpp}` 的 `ImuReader::step()`，它取
+`Drivers/imu_backend.hpp` 的 `ImuBackend&`，因此滤波逻辑与具体 IMU 芯片解耦。
+`Bmi270` 已按此模式落地，可作为接入新 6 轴 IMU（如 ICM 系列）的范例：
+
+1. 新增一个实现 `drivers::ImuBackend`（`begin/poll/ready`）的驱动；
+2. 在应用头文件加 `#elif ATTITUDE_BACKEND_xxx` 分支把 `rawImu_` 成员类型换成新驱动；
+3. 若新芯片需要启动期零偏标定，保留一个具体类方法（仿
+   `Mpu6050::calibrateGyroBias` / `Bmi270::calibrateGyroBias`），在
+   `init()`/`MpuCalibrate` 处调用。
+
+`ImuReader` 与 `AttitudeFilter` 无需改动。DMP 路径仍是 MPU6050 专有编译期选项，
+不经 `ImuReader`。
 
 ## 6. 调度与安全状态
 

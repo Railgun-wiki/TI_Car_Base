@@ -1,6 +1,6 @@
 # 控制与姿态 Middlewares
 
-所有 Middleware 仅依赖 `Common/types.hpp` 与标准 C++，可脱离开发板测试。
+所有 Middleware 仅依赖 `Common/types.hpp` 与标准 C++，可脱离开发板测试；`ImuReader` 额外依赖 `Drivers/imu_backend.hpp` 接口（不依赖具体芯片）。
 
 | 模块 | 输入 | 输出/作用 |
 | --- | --- | --- |
@@ -8,9 +8,13 @@
 | `DifferentialDrive` | `VehicleCommand` | 左右 `WheelCommand`。 |
 | `LineFollower` | `LineSample`、5 ms dt | 可运行时配置的 PID 巡线命令，不直接控制电机。 |
 | `EncoderSpeedEstimator` | ticks、timestamp | 左右轮 m/s。 |
-| `AttitudeFilter` | 原始 `ImuSample`、dt | 互补 / Kalman / Mahony AHRS roll/pitch/yaw。 || `SafetyGate` | 命令、enabled | 默认输出零。 |
+| `AttitudeFilter` | 原始 `ImuSample`、dt | 互补 / Kalman / Mahony AHRS roll/pitch/yaw。 |
+| `ImuReader` | `ImuBackend&`、`AttitudeFilter&`、`nowMs` | 封装 poll → dt → filter，让软件滤波路径不命名具体芯片。 |
+| `SafetyGate` | 命令、enabled | 默认输出零。 |
 | `Telemetry` | 状态 DTO | 固定缓冲格式化。 |
 | `VofaProtocol` | UART RX byte stream | 组帧并解析 VOFA+ 文本调参命令。 |
+
+`ImuReader::step()` 依次：调 `imu.poll(out)` → 算 `dtMs`（`lastMs_==0` 时首样本 fallback 10 ms，否则 `nowMs - lastMs_`）→ 更新 `lastMs_` 与 `out.timestampMs` → `poll==Ok` 时 `filter.update(out, dt_s)` 并返回其状态。`reset()` 清 `lastMs_=0`。本类不做 `ready()`/data-ready 门控，那仍由 Application 用 `imuReady_` 与 `bsp::consumeImuDataReady()` 控制，行为与原内联实现一致。状态：已构建，待实机验证。
 
 ## 姿态选择
 

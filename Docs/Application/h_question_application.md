@@ -25,7 +25,9 @@ LED1–LED3 并鸣叫 30 ms；鸣叫结束后三盏状态 LED 同时熄灭。随
 统计。每一条日志都在 TX ring 与硬件 FIFO 排空后才进入下一阶段。
 
 仅当扫描到 I2C0 `0x68` 才初始化 MPU；默认使用原始 MPU6050 加 complementary software
-filter（可通过 `ATTITUDE_CONFIG_BACKEND` 切回 DMP 或 Kalman）。仅当扫描到 I2C1 `0x3C`
+filter（可通过 `ATTITUDE_CONFIG_BACKEND` 切回 DMP 或 Kalman）。软件滤波分支的 IMU 成员为具体
+`Mpu6050`（供 `calibrateGyroBias`），但采样路径经 `ImuReader::step()` 以 `ImuBackend&` 驱动
+`AttitudeFilter`，不命名芯片；DMP 分支直接 `notifyDataReady` + `poll`，不经 `ImuReader`。仅当扫描到 I2C1 `0x3C`
 才初始化 OLED。每个设备完成初始化便立即更新 LED：LED1 表示至少一个设备成功，LED2
 表示两个设备都成功，LED3 始终熄灭。最终
 日志为 `BOOT READY DEVICES=2` 或 `BOOT DEGRADED DEVICES=n`；在这之前不会运行菜单、

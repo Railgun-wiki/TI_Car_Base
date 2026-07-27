@@ -53,6 +53,29 @@ Mahony 的 yaw 稳定性优于纯积分。
 算法可以计算和上报，但 `SafetyGate` 默认禁止它写入电机，直至完成方向、
 极性、轮径、减速比、编码器倍率和 PID 参数标定。
 
+### IMU 后端抽象
+
+软件姿态滤波路径只依赖 `Drivers/imu_backend.hpp` 的 `drivers::ImuBackend`
+抽象接口（`begin/poll/ready`），不直接依赖 `Mpu6050` 具体类。采样路径
+（poll → dt → `AttitudeFilter.update`）封装在 `Middlewares/imu_reader.{hpp,cpp}`
+的 `ImuReader::step()`，它取 `ImuBackend&` 参数。为其它 6 轴 IMU（如 ICM 系列）
+接入软件滤波只需新增一个 `ImuBackend` 实现，不必改动 Application 滤波路径。
+
+芯片专有方法不进接口：`Mpu6050::calibrateGyroBias`（启动期静态零偏标定）和
+`Mpu6050Dmp::notifyDataReady`（eMPL FIFO due 锁存）留在具体类，由 Application
+经编译期 `ATTITUDE_CONFIG_BACKEND` 分支调用。`Mpu6050`、`Mpu6050Dmp` 均实现
+`ImuBackend`。DMP 仍是编译期可选后端，与软件路径不做运行时多态；DMP 路径不经
+`ImuReader`。因软件路径的 IMU 是值成员，应用头文件在非 DMP 构建下仍需 include
+`mpu6050.hpp`（C++ 值语义要求完整类型），但运行时滤波逻辑已与芯片解耦。
+
+`Bmi270`（`ATTITUDE_BACKEND_BMI270`）是此抽象的第二个具体实现，验证了"换 IMU
+只加驱动"的目标：I2C0 上替换 MPU6050，驱动实现 `ImuBackend` + 自有
+`calibrateGyroBias`，Application 仅加 `#elif` 分支，`ImuReader`/`AttitudeFilter`
+零改动。BMI270 特有：初始化必须 burst-write 8192 字节 vendor config blob
+（`ThirdParty/bmi270/`），且 config 加载事务的 I2C timeout 需放宽至 ~500 ms。
+`BMI270_ONBOARD_FUSION` 宏让 `poll()` 改为驱动内置 Mahony 直出 Euler、绕过
+`AttitudeFilter`——这是芯片专有的旁路，不破坏接口契约。
+
 ## 当前代码边界与循线 Demo
 
 源码按 `BSP/`、`Drivers/`、`Middlewares/`、`Application/` 组织。`BSP/` 与 `Drivers/` 并列：前者是板级实现，独占 DriverLib/SysConfig，并按 `system`、`i2c`、`uart`、`motor`、`input`、`indicator`、`encoder` 拆分；后者是设备语义 Driver，例如 `motor_driver.*`、`mpu6050.*`。每个设备或功能独占同名 `.hpp + .cpp`。`Middlewares` 只处理 `VehicleCommand`、`WheelCommand`、`LineSample`、`EncoderTicks`、`ImuSample` 等值对象。

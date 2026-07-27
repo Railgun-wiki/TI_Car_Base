@@ -209,6 +209,8 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
     if (i2c0Scan_.contains(0x68U)) {
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
       if (queueStartupLog("MPU 0x68 INIT DMP...\r\n"))
+#elif ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_BMI270
+      if (queueStartupLog("BMI270 0x68 INIT...\r\n"))
 #else
       if (queueStartupLog("MPU 0x68 INIT SW FILTER...\r\n"))
 #endif
@@ -226,7 +228,10 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
     startupState_ = StartupState::MpuResultLog;
 #else
     imuReady_ = rawImu_.begin() == car::Status::Ok;
+#if ATTITUDE_CONFIG_BACKEND != ATTITUDE_BACKEND_BMI270 || !BMI270_ONBOARD_FUSION
+    imuReader_.reset();
     softwareAttitude_.reset();
+#endif
     if (imuReady_) {
       startupState_ = StartupState::MpuCalibrate;
       return;
@@ -235,12 +240,16 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
 #endif
     return;
   case StartupState::MpuCalibrate: {
+#if ATTITUDE_CONFIG_BACKEND != ATTITUDE_BACKEND_DMP
     // Blocks ~1 s while averaging gyro bias. The car must be stationary.
     // Failure downgrades imuReady_ so the H-question gate refuses to start.
+    // Unreachable in the DMP build (MpuInit skips straight to MpuResultLog),
+    // hence the guard.
     const car::Status status = rawImu_.calibrateGyroBias();
     softwareAttitude_.reset();
     if (status != car::Status::Ok)
       imuReady_ = false;
+#endif
     startupState_ = StartupState::MpuResultLog;
     return;
   }
@@ -248,6 +257,8 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
     updateDeviceLeds();
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
     formatDeviceLog("MPU 0x68 INIT DMP", true, imuReady_);
+#elif ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_BMI270
+    formatDeviceLog("BMI270 0x68 INIT", true, imuReady_);
 #else
     formatDeviceLog("MPU 0x68 INIT SW FILTER", true, imuReady_);
 #endif
@@ -315,14 +326,12 @@ void HQuestionApplication::updateImu() noexcept {
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
   dmpImu_.notifyDataReady();
   const car::Status status = dmpImu_.poll(sample);
-#else
+#elif ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_BMI270 &&                    \
+    BMI270_ONBOARD_FUSION
   const car::Status status = rawImu_.poll(sample);
-  const std::uint32_t now = bsp::millis();
-  const std::uint32_t dtMs = lastImuMs_ == 0U ? 10U : now - lastImuMs_;
-  lastImuMs_ = now;
-  sample.timestampMs = now;
-  if (status == car::Status::Ok)
-    (void)softwareAttitude_.update(sample, static_cast<float>(dtMs) / 1000.0F);
+#else
+  const car::Status status =
+      imuReader_.step(rawImu_, softwareAttitude_, bsp::millis(), sample);
 #endif
   if (status == car::Status::Ok) {
     imuSample_ = sample;

@@ -6,7 +6,7 @@
 
 1. 显式 `MotorDriver::stop()`；
 2. LED/蜂鸣器给出上电提示；
-3. 按已选姿态后端初始化 `Mpu6050Dmp` 或原始 `Mpu6050`；
+3. 按已选姿态后端初始化：DMP 分支直接 `Mpu6050Dmp::begin()`；软件滤波分支 `Mpu6050::begin()` + `calibrateGyroBias()`（具体类，启动期一次性）+ `ImuReader::reset()`；
 4. 初始化 OLED；设备不存在时仅降级显示；
 5. 未就绪设备不得解除电机安全状态。
 
@@ -15,7 +15,7 @@
 | 工作 | 节奏 | 规则 |
 | --- | --- | --- |
 | 灰度采样/巡线 PID | 200 Hz | 固定 dt=5 ms，更新轮端建议。 |
-| IMU | PB11 data-ready | 主循环读取；ISR 只置标志。 |
+| IMU | PB11 data-ready | 主循环读取；ISR 只置标志。软件滤波分支经 `ImuReader::step(rawImu_, softwareAttitude_, now, sample)` 驱动（`rawImu_` 以 `ImuBackend&` 上溯），DMP 分支直接 `notifyDataReady` + `poll`。 |
 | VOFA+ telemetry | 20 Hz | UART ring 满时丢弃完整帧。 |
 | VOFA+ command | 主循环轮询 | 仅停车时更新循线参数。 |
 | LED 心跳 | 2 Hz 翻转 | 表示 superloop 仍运行。 |
