@@ -6,7 +6,7 @@
 | `Encoder` | 读取/复位 `EncoderTicks` | 不在 Driver 内计算速度。 |
 | `LineSensorArray` | 8-bit `LineSample`、加权 error | 灰度极性必须实机确认。 |
 
-`LineSensorArray` 的 `read()` 把 `bsp::readLineBits()` 的原始 8 bit 归一为“置位 = 压在线上”，再做 `-7..+7` 加权求平均。灰度模块指示 LED 默认“贴白亮、贴黑灭”，但 OUT 引脚电平是否与指示灯同相取决于传感器板，必须在 `Drivers/line_sensor_config.h` 按 `LINE_SENSOR_LINE_IS_HIGH`（默认 `1`：高电平 = 压线）实机确认；翻转极性只改该宏，不改正文权重逻辑。
+`LineSensorArray` 的 `read()` 把 `bsp::readLineBits()` 的原始 8 bit 归一为“置位 = 压在线上”，再做 `-7..+7` 加权求平均。灰度模块指示 LED 默认“贴白亮、贴黑灭”，但 OUT 引脚电平是否与指示灯同相取决于传感器板；必须在 `Config/vehicle_tuning.hpp` 按 `VEHICLE_TUNING_LINE_SENSOR_LINE_IS_HIGH` 实机确认。翻转极性只改该宏，不改正文权重逻辑。
 
 ## `ImuBackend` 接口
 

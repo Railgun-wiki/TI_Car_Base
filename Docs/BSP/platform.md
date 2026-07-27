@@ -12,7 +12,7 @@
 | `encoder.*` | 软件正交计数和 MPU data-ready ISR 分发。 |
 | `MPU6050/mpu6050_empl_port.*` | eMPL 的 I2C、delay、单调时间 port。 |
 
-`SysTick_Handler` 仅递增毫秒计数。`GPIOB_IRQHandler` 只更新 tick、清中断并置
+`SysTick_Handler` 仅递增毫秒计数。`GROUP1_IRQHandler` 分发 GPIOB 事件，只更新 tick、清中断并置
 IMU flag；`UART0_IRQHandler` 只在硬件 FIFO 与 256-byte TX / 128-byte RX
 ring buffer 之间搬运数据；`I2C1_IRQHandler` 仅收尾 OLED 的 DMA 写入（TX Done /
 NACK / arbitration-lost），I2C1 controller 的 RX 仍由轮询路径处理。ISR 内禁止

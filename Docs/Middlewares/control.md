@@ -8,6 +8,7 @@
 | `DifferentialDrive` | `VehicleCommand` | 左右 `WheelCommand`。 |
 | `LineFollower` | `LineSample`、5 ms dt | 可运行时配置的 PID 巡线命令，不直接控制电机。 |
 | `EncoderSpeedEstimator` | ticks、timestamp | 左右轮 m/s。 |
+| `WheelSpeedController` | 左右目标 mm/s、ticks、timestamp | 两路受限速度 PID，输出 `[-1000,1000]` PWM 命令。 |
 | `AttitudeFilter` | 原始 `ImuSample`、dt | 互补 / Kalman / Mahony AHRS roll/pitch/yaw。 |
 | `ImuReader` | `ImuBackend&`、`AttitudeFilter&`、`nowMs` | 封装 poll → dt → filter，让软件滤波路径不命名具体芯片。 |
 | `SafetyGate` | 命令、enabled | 默认输出零。 |
@@ -32,7 +33,10 @@ Mahony 默认参数 Kp=0.17 / Ki=0.004 取自 SJTU-AuTop `attitude_solution.c`�
 
 `AttitudeFilter::update()` 拒绝 `dt<=0` 或 `dt>0.1 s` 的样本。Mahony 路径在加速度范数近零（自由落体或丢帧）时禁用加速度叉乘修正、仅积分陀螺，并将重力参考置为单位向量，避免 `fastInvSqrt(0)` 产生 NaN 污染四元数；`fastInvSqrt` 的浮点↔整数重解释改用 `memcpy` 以避免严格别名 UB。
 
-`EncoderSpeedConfig` 初值为 Wheeltec C07A 的 65 mm、28:1、13 CPR、2x decode。确认本车方向、轮径、倍率和 PID 前，`SafetyGate` 不得允许闭环写入电机。
+H 题速度闭环当前使用 48 mm 轮径、1456 counts/轮、50 ms 更新周期，以及 `Kp=2, Ki=1,
+Kd=0`、250 PWM 输出限幅；其中 1456 来自 28:1 减速比、13 线编码器的四倍频正交解码。确认
+本车方向、轮径、倍率和 PID 前，
+`SafetyGate` 不得允许闭环写入电机。
 
 ## VOFA+ 调参
 
@@ -47,12 +51,9 @@ Mahony 默认参数 Kp=0.17 / Ki=0.004 取自 SJTU-AuTop `attitude_solution.c`�
 
 命令使用 ASCII，末尾必须是 `\n` 或 `\r\n`。数值支持普通十进制，不支持科学
 计数法。运行中修改返回 `err:RUNNING`，越界返回 `err:RANGE`。
-# H 题赛道状态机
+# H 题应用边界
 
-`HQuestionRace` 将 H 题的四条路径表示为纯 Middleware 状态机，不直接控制电机或
-读取 GPIO。它输出当前段类型、目标距离、相对 yaw 目标、圈数与状态；
-`HQuestionApplication` 决定使用巡线或 heading PID，并通过 `SafetyGate` 发布命令。
-
-状态为菜单、倒计时、运行、顶点暂停、完成和故障。运行段在目标距离 60% 后启用灰度
-辅助顶点判断，达到目标距离必然结束该段。所有物理量在 `RaceConfig` 统一管理，默认
-参数仅用于构建和初始调试，必须实车标定。
+P1–P4 路径、倒计时和端点状态机属于 `Application/h_question_program.*`，而非
+Middleware。Middleware 仅提供可复用的 PID、循线和速度闭环；Application 决定使用
+巡线或 heading PID，并通过 `SafetyGate` 发布命令。所有 H 题调试参数集中于
+`Config/vehicle_tuning.hpp`，默认值仅用于构建和初始调试，必须实车标定。

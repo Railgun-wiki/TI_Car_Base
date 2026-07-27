@@ -7,7 +7,10 @@
 
 namespace app {
 namespace {
-constexpr std::uint32_t kControlPeriodMs = 5U;
+constexpr std::uint32_t kControlPeriodMs = H_QUESTION_CONTROL_PERIOD_MS;
+constexpr std::uint32_t kOuterControlPeriodMs =
+    H_QUESTION_OUTER_CONTROL_PERIOD_MS;
+constexpr std::uint32_t kControlLogPeriodMs = H_QUESTION_CONTROL_LOG_PERIOD_MS;
 constexpr std::uint32_t kUserLedPeriodMs = 1000U;
 constexpr std::uint32_t kUserLedPulseMs = 50U;
 constexpr std::uint32_t kStartupToneMs = 30U;
@@ -35,21 +38,32 @@ void appendUnsigned(char *destination, std::uint8_t &length,
     destination[length++] = digits[--count];
 }
 
+void appendSigned(char *destination, std::uint8_t &length,
+                  std::int32_t value) noexcept {
+  if (value < 0) {
+    destination[length++] = '-';
+    appendUnsigned(destination, length,
+                   static_cast<std::uint32_t>(-(value + 1)) + 1U);
+    return;
+  }
+  appendUnsigned(destination, length, static_cast<std::uint32_t>(value));
+}
+
 void textNumber(char *text, std::uint8_t offset, std::uint16_t value) noexcept {
   text[offset] = static_cast<char>('0' + (value / 100U) % 10U);
   text[offset + 1U] = static_cast<char>('0' + (value / 10U) % 10U);
   text[offset + 2U] = static_cast<char>('0' + value % 10U);
 }
 
-const char *programText(middleware::HProgram program) noexcept {
+const char *programText(HProgram program) noexcept {
   switch (program) {
-  case middleware::HProgram::Requirement1:
+  case HProgram::Requirement1:
     return "P1 A-B";
-  case middleware::HProgram::Requirement2:
-    return "P2 A-B-C-D-A";
-  case middleware::HProgram::Requirement3:
+  case HProgram::Requirement2:
+    return "P2 LINE 500CM";
+  case HProgram::Requirement3:
     return "P3 A-C-B-D-A";
-  case middleware::HProgram::Requirement4:
+  case HProgram::Requirement4:
     return "P4 P3 X4";
   }
   return "P?";
@@ -138,12 +152,17 @@ void HQuestionApplication::formatDeviceLog(const char *device,
 }
 
 void HQuestionApplication::configureRace() noexcept {
-  headingPid_.configure({raceConfig_.headingKp, raceConfig_.headingKi,
-                         raceConfig_.headingKd, 350.0F, 50.0F});
+  const float maxTurn =
+      static_cast<float>(H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND -
+                         H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND);
+  headingPid_.configure({H_QUESTION_HEADING_KP, H_QUESTION_HEADING_KI,
+                         H_QUESTION_HEADING_KD, maxTurn,
+                         H_QUESTION_HEADING_INTEGRAL_LIMIT});
   const auto lineConfig = lineFollower_.config();
   (void)lineFollower_.configure(lineConfig.kp, lineConfig.ki, lineConfig.kd,
-                                raceConfig_.arcCruise);
-  race_ = middleware::HQuestionRace{raceConfig_};
+                                H_QUESTION_ARC_SPEED_MM_PER_SECOND);
+  race_ = HQuestionProgram{raceConfig_};
+  speedController_.reset();
 }
 
 void HQuestionApplication::updateDeviceLeds() noexcept {
@@ -311,8 +330,22 @@ void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
     return;
   }
   case StartupState::WaitReadyLog:
-    if (bsp::uartTxIdle())
+    if (bsp::uartTxIdle()) {
       startupState_ = StartupState::Ready;
+      if (autoStartPending_) {
+        autoStartPending_ = false;
+#if H_QUESTION_AUTO_START_PROGRAM != 0
+        if (imuReady_) {
+          race_.select(
+              static_cast<HProgram>(H_QUESTION_AUTO_START_PROGRAM - 1));
+          headingPid_.reset();
+          lineFollower_.reset();
+          speedController_.reset();
+          race_.start(now, encoder_.ticks(), imuSample_.yawDeg);
+        }
+#endif
+      }
+    }
     return;
   case StartupState::Ready:
     return;
@@ -355,7 +388,7 @@ void HQuestionApplication::processKeys(std::uint32_t now) noexcept {
   centerWasPressed_ = center;
 
   const auto race = race_.snapshot();
-  if (race.state == middleware::HRaceState::Menu) {
+  if (race.state == HRaceState::Menu) {
     if (leftPressed)
       race_.selectPrevious();
     if (rightPressed)
@@ -363,6 +396,7 @@ void HQuestionApplication::processKeys(std::uint32_t now) noexcept {
     if (centerPressed && imuReady_) {
       headingPid_.reset();
       lineFollower_.reset();
+      speedController_.reset();
       race_.start(now, encoder_.ticks(), imuSample_.yawDeg);
     }
     return;
@@ -372,33 +406,77 @@ void HQuestionApplication::processKeys(std::uint32_t now) noexcept {
     motor_.stop();
     headingPid_.reset();
     lineFollower_.reset();
+    speedController_.reset();
   }
 }
 
 void HQuestionApplication::updateControl(std::uint32_t now) noexcept {
-  const auto race = race_.update(now, encoder_.ticks(), imuSample_.yawDeg,
-                                 lineSample_.detected);
-  if (race.state != middleware::HRaceState::Running) {
-    motor_.set(gate_.apply({0, 0}, false));
-    return;
-  }
   if (static_cast<std::uint32_t>(now - lastControlMs_) < kControlPeriodMs)
     return;
   lastControlMs_ = now;
   lineSample_ = line_.read();
-
-  car::VehicleCommand command{};
-  if (race.segmentType == middleware::HSegmentType::Arc) {
-    command = lineFollower_.update(
-        lineSample_, static_cast<float>(kControlPeriodMs) / 1000.0F);
-  } else {
-    const float turn =
-        headingPid_.update(race.targetYawDeg, imuSample_.yawDeg,
-                           static_cast<float>(kControlPeriodMs) / 1000.0F);
-    command = {raceConfig_.straightCruise, static_cast<std::int16_t>(turn)};
+  const auto race =
+      race_.update(now, encoder_.ticks(), imuSample_.yawDeg, lineSample_);
+  if (race.state != HRaceState::Running) {
+    motor_.set(gate_.apply({0, 0}, false));
+    headingPid_.reset();
+    lineFollower_.reset();
+    speedController_.reset();
+    return;
   }
-  proposal_ = drive_.mix(command);
-  motor_.set(gate_.apply(proposal_, imuReady_));
+
+  if (static_cast<std::uint32_t>(now - lastOuterControlMs_) >=
+      kOuterControlPeriodMs) {
+    lastOuterControlMs_ = now;
+    car::VehicleCommand command{};
+    if (race.segmentType == HSegmentType::Arc) {
+      command = lineFollower_.update(
+          lineSample_, static_cast<float>(kOuterControlPeriodMs) / 1000.0F);
+    } else {
+      const float turn = headingPid_.update(
+          race.targetYawDeg, imuSample_.yawDeg,
+          static_cast<float>(kOuterControlPeriodMs) / 1000.0F);
+      command = {H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND,
+                 static_cast<std::int16_t>(turn)};
+    }
+    proposal_ = drive_.mix(command);
+    if (proposal_.left < H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND)
+      proposal_.left = H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND;
+    if (proposal_.right < H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND)
+      proposal_.right = H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND;
+  }
+
+  motor_.set(gate_.apply(
+      speedController_.update(encoder_.ticks(), now, proposal_), imuReady_));
+  if (static_cast<std::uint32_t>(now - lastControlLogMs_) <
+      kControlLogPeriodMs)
+    return;
+  lastControlLogMs_ = now;
+  const auto ticks = encoder_.ticks();
+  const auto speed = speedController_.measured();
+  const auto pwm = motor_.command();
+  std::uint8_t length = 0U;
+  appendText(startupLog_, length, "CTRL T=");
+  appendSigned(startupLog_, length, ticks.left);
+  appendText(startupLog_, length, ",");
+  appendSigned(startupLog_, length, ticks.right);
+  appendText(startupLog_, length, " V=");
+  appendSigned(startupLog_, length,
+               static_cast<std::int32_t>(speed.leftMetersPerSecond * 1000.0F));
+  appendText(startupLog_, length, ",");
+  appendSigned(
+      startupLog_, length,
+      static_cast<std::int32_t>(speed.rightMetersPerSecond * 1000.0F));
+  appendText(startupLog_, length, " REF=");
+  appendSigned(startupLog_, length, proposal_.left);
+  appendText(startupLog_, length, ",");
+  appendSigned(startupLog_, length, proposal_.right);
+  appendText(startupLog_, length, " PWM=");
+  appendSigned(startupLog_, length, pwm.left);
+  appendText(startupLog_, length, ",");
+  appendSigned(startupLog_, length, pwm.right);
+  appendText(startupLog_, length, "\r\n");
+  (void)bsp::uartTryWrite(startupLog_, length);
 }
 
 void HQuestionApplication::updateUserLed(std::uint32_t now) noexcept {
@@ -416,7 +494,7 @@ void HQuestionApplication::updateUserLed(std::uint32_t now) noexcept {
 }
 
 void HQuestionApplication::submitMenu(
-    const middleware::HRaceSnapshot &race) noexcept {
+    const HRaceSnapshot &race) noexcept {
   (void)oled_.writeLine(0U, "H QUESTION MENU");
   (void)oled_.writeLine(1U, programText(race.program));
   (void)oled_.writeLine(2U, "LEFT RIGHT SELECT");
@@ -424,7 +502,7 @@ void HQuestionApplication::submitMenu(
 }
 
 void HQuestionApplication::submitRun(
-    const middleware::HRaceSnapshot &race) noexcept {
+    const HRaceSnapshot &race) noexcept {
   char row0[] = "RUN P0 S0/0 L0";
   char row1[] = "D:000/000 CM";
   char row2[] = "Y:000 TARGET";
@@ -441,11 +519,11 @@ void HQuestionApplication::submitRun(
   (void)oled_.writeLine(0U, row0);
   (void)oled_.writeLine(1U, row1);
   (void)oled_.writeLine(2U, row2);
-  if (race.state == middleware::HRaceState::Countdown)
+  if (race.state == HRaceState::Countdown)
     (void)oled_.writeLine(3U, "CENTER CANCEL");
-  else if (race.state == middleware::HRaceState::Finished)
+  else if (race.state == HRaceState::Finished)
     (void)oled_.writeLine(3U, "DONE CENTER MENU");
-  else if (race.state == middleware::HRaceState::Fault)
+  else if (race.state == HRaceState::Fault)
     (void)oled_.writeLine(3U, "FAULT CENTER MENU");
   else
     (void)oled_.writeLine(3U, "CENTER STOP");
@@ -457,7 +535,7 @@ void HQuestionApplication::refreshOled(std::uint32_t now) noexcept {
   if (static_cast<std::uint32_t>(now - lastOledTextMs_) >= 100U) {
     lastOledTextMs_ = now;
     const auto race = race_.snapshot();
-    if (race.state == middleware::HRaceState::Menu)
+    if (race.state == HRaceState::Menu)
       submitMenu(race);
     else
       submitRun(race);

@@ -2,6 +2,8 @@
 
 #include <array>
 
+#include "Application/h_question_program.hpp"
+#include "Config/vehicle_tuning.hpp"
 #include "Drivers/active_buzzer.hpp"
 #include "Drivers/encoder.hpp"
 #include "Drivers/keypad.hpp"
@@ -12,10 +14,10 @@
 #include "Middlewares/attitude_backend_config.h"
 #include "Middlewares/attitude_filter.hpp"
 #include "Middlewares/differential_drive.hpp"
-#include "Middlewares/h_question_race.hpp"
 #include "Middlewares/line_follower.hpp"
 #include "Middlewares/pid.hpp"
 #include "Middlewares/safety_gate.hpp"
+#include "Middlewares/wheel_speed_controller.hpp"
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
 #include "Drivers/mpu6050_dmp.hpp"
 #elif ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_BMI270
@@ -85,10 +87,10 @@ private:
   void updateControl(std::uint32_t now) noexcept;
   void updateUserLed(std::uint32_t now) noexcept;
   void refreshOled(std::uint32_t now) noexcept;
-  void submitMenu(const middleware::HRaceSnapshot &race) noexcept;
-  void submitRun(const middleware::HRaceSnapshot &race) noexcept;
+  void submitMenu(const HRaceSnapshot &race) noexcept;
+  void submitRun(const HRaceSnapshot &race) noexcept;
 
-  middleware::RaceConfig raceConfig_{};
+  HQuestionProgramConfig raceConfig_{};
   drivers::MotorDriver motor_{};
   drivers::LineSensorArray line_{};
   drivers::Encoder encoder_{};
@@ -116,15 +118,36 @@ private:
 #endif
   };
   drivers::Ssd1306 oled_{};
-  middleware::LineFollower lineFollower_{{45.0F, 0.0F, 0.0F, 250}};
-  middleware::Pid headingPid_{{18.0F, 0.0F, 0.2F, 350.0F, 50.0F}};
-  middleware::DifferentialDrive drive_{{0.15F}};
+  middleware::LineFollower lineFollower_{{H_QUESTION_LINE_KP,
+                                           H_QUESTION_LINE_KI,
+                                           H_QUESTION_LINE_KD,
+                                           H_QUESTION_ARC_SPEED_MM_PER_SECOND}};
+  middleware::Pid headingPid_{{H_QUESTION_HEADING_KP,
+                                H_QUESTION_HEADING_KI,
+                                H_QUESTION_HEADING_KD,
+                                static_cast<float>(H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND -
+                                                   H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND),
+                                H_QUESTION_HEADING_INTEGRAL_LIMIT}};
+  middleware::WheelSpeedController speedController_{{
+      {VEHICLE_TUNING_WHEEL_DIAMETER_METERS, VEHICLE_TUNING_GEAR_RATIO,
+       VEHICLE_TUNING_ENCODER_COUNTS_PER_MOTOR_REVOLUTION,
+       VEHICLE_TUNING_ENCODER_QUADRATURE_MULTIPLIER},
+      {H_QUESTION_SPEED_KP, H_QUESTION_SPEED_KI, H_QUESTION_SPEED_KD,
+       H_QUESTION_SPEED_PWM_LIMIT, H_QUESTION_SPEED_INTEGRAL_LIMIT},
+      {H_QUESTION_SPEED_KP, H_QUESTION_SPEED_KI, H_QUESTION_SPEED_KD,
+       H_QUESTION_SPEED_PWM_LIMIT, H_QUESTION_SPEED_INTEGRAL_LIMIT},
+      H_QUESTION_SPEED_SAMPLE_PERIOD_MS,
+      H_QUESTION_SPEED_PWM_RISE_PER_UPDATE,
+  }};
+  middleware::DifferentialDrive drive_{{H_QUESTION_TRACK_WIDTH_METERS}};
   middleware::SafetyGate gate_{};
-  middleware::HQuestionRace race_{};
+  HQuestionProgram race_{raceConfig_};
   car::LineSample lineSample_{};
   car::ImuSample imuSample_{};
   car::WheelCommand proposal_{};
   std::uint32_t lastControlMs_ = 0U;
+  std::uint32_t lastOuterControlMs_ = 0U;
+  std::uint32_t lastControlLogMs_ = 0U;
   std::uint32_t lastUserLedPulseMs_ = 0U;
   std::uint32_t lastOledTextMs_ = 0U;
   std::uint32_t lastOledServiceMs_ = 0U;
@@ -139,6 +162,7 @@ private:
   bool imuReady_ = false;
   bool oledReady_ = false;
   bool userLedOn_ = false;
+  bool autoStartPending_ = true;
 };
 
 } // namespace app

@@ -18,15 +18,18 @@ main()
 
 `CarApplication` 独占 `MotorDriver`，因此只有 Application 能把最终的轮端命令
 写到 PWM。`LineFollower`、`Pid` 与 `DifferentialDrive` 已接入循线 Demo；
-`EncoderSpeedEstimator` 仍只计算数据，编码器速度闭环尚未接入。
+H 题应用已将 `EncoderSpeedEstimator`、左右 `Pid` 封装为
+`WheelSpeedController`，在 5 ms 控制链中每 50 ms 将左右目标 mm/s 闭环为 PWM 命令。
 
 数据方向如下：
 
 ```text
 GPIO gray -> LineSensorArray -> LineSample -> LineFollower -> VehicleCommand
 encoder ISR -> Encoder -> EncoderTicks -> EncoderSpeedEstimator -> WheelSpeed
+  -> WheelSpeedController -> WheelCommand
 MPU I2C/FIFO -> Mpu6050/Mpu6050Dmp/Bmi270 (all implement ImuBackend) -> ImuSample -> ImuReader+AttitudeFilter (software backend); DMP or Bmi270+FUSION -> ImuSample with Euler directly
-line-follow wheel proposal -> SafetyGate -> MotorDriver -> BSP PWM + TB6612
+line-follow/heading speed targets -> WheelSpeedController -> SafetyGate
+  -> MotorDriver -> BSP PWM + TB6612
 ```
 
 所有公开接口均为 `noexcept`。失败不通过异常上抛，而是以 `car::Status` 返回；调用方必须显式检查。
@@ -89,7 +92,7 @@ void step() noexcept;
 | 每 500 ms | 翻转用户 LED | 仅表示 superloop 活着。 |
 | 每 50 ms | 格式化 VOFA+ telemetry，并更新第一行 OLED | UART ring 空间不足时丢弃完整帧；OLED 单次失败目前未清除 `oledReady_`。 |
 
-当前 Demo 已接入巡线 PID 和差速混合，速度 PI 尚未接入。候选命令始终先通过
+H 题已接入巡线 PID、航向 PID、差速混合和双轮速度 PID。候选命令始终先通过
 `SafetyGate`；实车运行前仍需完成《维护手册》的方向、灰度和 PID 标定。
 
 ## 4. Middleware：可脱板测试的算法层
@@ -159,7 +162,20 @@ metersPerCount     = π * wheelDiameterMeters / countsPerWheelTurn
 speed              = (currentTicks - previousTicks) * metersPerCount / dtSeconds
 ```
 
-若 `dt == 0`，返回零速度且不推进历史样本。默认参数是 Wheeltec C07A 的暂定值（65 mm、28:1、13 CPR、2x），不能直接作为闭环标定结果。
+若 `dt == 0`，返回零速度且不推进历史样本。H 题速度闭环采用 48 mm、1456 counts/轮的
+暂定配置，不能直接作为闭环标定结果。
+
+### `middleware::WheelSpeedController`
+
+```cpp
+WheelSpeedController(WheelSpeedControllerConfig config = {}) noexcept;
+WheelCommand update(EncoderTicks ticks, uint32_t nowMs,
+                    WheelCommand targetMmPerSecond) noexcept;
+void reset() noexcept;
+```
+
+每轮独立 PID 的输入与目标均为 mm/s，输出为 `[-1000,1000]` PWM 命令。状态切换到
+非运行态时必须调用 `reset()`，以清除测速历史、积分和微分历史。
 
 ### `middleware::AttitudeFilter`
 
@@ -367,10 +383,10 @@ void initializeEncoders() noexcept;
 car::EncoderTicks encoderTicks() noexcept;
 void resetEncoderTicks() noexcept;
 bool consumeImuDataReady() noexcept;
-extern "C" void GPIOB_IRQHandler(void);
+extern "C" void GROUP1_IRQHandler(void);
 ```
 
-编码器使用两相双边沿 GPIO 中断。`GPIOB_IRQHandler()` 对任一编码器边沿读取两个相位，拼为 2-bit 当前状态，并用 `(previous << 2) | current` 的 16 种跳变表判断：`1/7/14/8` 加一，`2/11/13/4` 减一，其余（保持或非法跳变）不计数。`initializeEncoders()` 在开中断后的基准点采样状态，避免首边沿误计。
+编码器使用两相双边沿 GPIO 中断。`GROUP1_IRQHandler()` 确认 GPIOB group source 后，对任一编码器边沿读取两个相位，拼为 2-bit 当前状态，并用 `(previous << 2) | current` 的 16 种跳变表判断：`1/7/14/8` 加一，`2/11/13/4` 减一，其余（保持或非法跳变）不计数。`initializeEncoders()` 在开中断后的基准点采样状态，避免首边沿误计。
 
 同一 IRQ 同时处理 MPU PB11 data-ready：ISR 仅置 `imuDue=true` 并清中断。`consumeImuDataReady()` 读取并清除这个 flag，因此多个未处理 data-ready 会合并为一次通知；这是当前单标志策略的预期行为。ISR 内不得加入 I2C、DMP、PID、OLED、UART 或动态分配。
 
@@ -402,7 +418,7 @@ extern "C" void GPIOB_IRQHandler(void);
 4. 在完成所有安全判定后，通过 `SafetyGate::apply()`；
 5. 最后且只在 Application 中调用 `MotorDriver::set()`。
 
-不要让 Middleware 直接调用 BSP，也不要在 `GPIOB_IRQHandler()` 中计算速度、PID 或 I2C。这样日后从 superloop 迁移到 RTOS 时，主要替换调度方式，而不需要重写算法与设备接口。
+不要让 Middleware 直接调用 BSP，也不要在 `GROUP1_IRQHandler()` 中计算速度、PID 或 I2C。这样日后从 superloop 迁移到 RTOS 时，主要替换调度方式，而不需要重写算法与设备接口。
 
 ## 9. 当前实现边界清单
 
@@ -410,7 +426,7 @@ extern "C" void GPIOB_IRQHandler(void);
 - 线传感极性、DMP 安装轴、左右电机正方向、编码器符号/倍率、轮径和 PID 均为待实机验证项。
 - Keypad 尚无消抖，OLED 尚无通用字库/多页 framebuffer。
 - I2C 超时会返回，但尚无物理总线恢复；DMP FIFO overflow 仅 reset FIFO 后等待下一包。
-- `Pid`、`LineFollower` 和 `DifferentialDrive` 已接入循线 Demo；编码器速度闭环
-  尚未接入。
+- H 题已接入 `WheelSpeedController`；其轮径、编码器倍率、速度 PID 与电机/编码器方向
+  仍待实机验证。
 
 这些限制是当前安全分阶段策略的一部分。新增功能时应同步更新本文档、对应模块文档与上板验收记录。

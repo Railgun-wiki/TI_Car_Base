@@ -11,10 +11,16 @@ float Pid::update(float target, float measured, float dt) noexcept {
     boundedIntegral = config_.integralLimit;
   if (boundedIntegral < -config_.integralLimit)
     boundedIntegral = -config_.integralLimit;
-  integral_ = boundedIntegral;
+  const float base = config_.kp * e + config_.kd * d;
+  const float candidateOutput = base + config_.ki * boundedIntegral;
+  // Do not retain integral that would push an already saturated output farther
+  // into saturation; it would otherwise cause a delayed full-PWM surge.
+  if (!((candidateOutput > config_.outputLimit && e > 0.0F) ||
+        (candidateOutput < -config_.outputLimit && e < 0.0F)))
+    integral_ = boundedIntegral;
   previous_ = e;
   hasPrevious_ = true;
-  float o = config_.kp * e + config_.ki * integral_ + config_.kd * d;
+  float o = base + config_.ki * integral_;
   if (o > config_.outputLimit)
     o = config_.outputLimit;
   if (o < -config_.outputLimit)

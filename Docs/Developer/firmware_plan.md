@@ -48,10 +48,9 @@ eMPL 主体。互补滤波适合轻量、快速验证，Kalman 为每轴 angle+b
 Mahony 为四元数 + PI 修正陀螺零偏（参考 SJTU-AuTop）；三者都只有 6-axis 相对 yaw，
 Mahony 的 yaw 稳定性优于纯积分。
 
-`EncoderSpeedEstimator` 的初值来自 Wheeltec C07A：65 mm 轮径、28:1
-减速比、13 CPR、2x 软件解码。该配置仅作起点，必须以本车实测值替换。闭环
-算法可以计算和上报，但 `SafetyGate` 默认禁止它写入电机，直至完成方向、
-极性、轮径、减速比、编码器倍率和 PID 参数标定。
+H 题 `WheelSpeedController` 的初值采用 48 mm 轮径与 1456 counts/轮（28:1 减速比、13
+线编码器的四倍频）。该配置仅作起点，必须以本车实测值替换。闭环输出仍须经过
+`SafetyGate`，直至完成方向、极性、轮径、编码器倍率和 PID 参数标定。
 
 ### IMU 后端抽象
 

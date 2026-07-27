@@ -28,7 +28,7 @@ RTTI 与热路径虚函数。
 | --- | --- | --- |
 | 系统时钟 | HFXT 40 MHz、LFXT 32.768 kHz、MCLK 80 MHz | 修改时必须复核 flash wait state、I2C/UART 时序。 |
 | TB6612 | PA28/PB20 PWM 10 kHz；方向 PA13/PB26/PB9/PB7 | 改变方向前先归零 PWM；上电必须停止。 |
-| 灰度 | C1..C8：PA31/PA12/PB8/PA27/PB0/PA30/PB21/PB10 | 在 `LineSensorArray` 统一极性；实测翻转用 `Drivers/line_sensor_config.h` 的 `LINE_SENSOR_LINE_IS_HIGH`。 |
+| 灰度 | C1..C8：PA31/PA12/PB8/PA27/PB0/PA30/PB21/PB10 | 在 `LineSensorArray` 统一极性；实测翻转用 `Config/vehicle_tuning.hpp` 的 `VEHICLE_TUNING_LINE_SENSOR_LINE_IS_HIGH`。 |
 | 编码器 | 左 PB23/PB12；右 PB4/PB5；双边沿 GPIO ISR | ISR 仅更新 ticks，不计算速度/PID。 |
 | MPU6050 | I2C0 PA0/PA1 400 kHz；INT PB11 | ISR 仅置 data-ready；I2C/FIFO 仅在主循环。 |
 | OLED | I2C1 PB2/PB3 400 kHz | 无设备或超时必须降级，不得阻塞控制。 |
@@ -110,10 +110,9 @@ portability patch 仅限：添加 `EMPL_TARGET_MSPM0` 分支、Target 编译包�
 
 | 参数 | 初值 | 验证方法 |
 | --- | ---: | --- |
-| 轮径 | 0.065 m | 多圈滚动距离 / 圈数。 |
-| 减速比 | 28:1 | 轴与轮的转数比。 |
-| 编码器 CPR | 13 | 查电机规格并以示波器/计数验证。 |
-| 解码倍率 | 2 | 与 GPIO 边沿解码实测 ticks 对齐。 |
+| 轮径 | 0.048 m | 多圈滚动距离 / 圈数。 |
+| 每轮计数 | 1456 | 28:1 减速比 x 13 线编码器 x 四倍频；推车实测校验。 |
+| 速度 PID | Kp=2, Ki=1, Kd=0；输出限幅 700 | 从低速开始，核对左右方向与 PWM 符号。 |
 
 完成上述项目后，依次确认左右正方向、速度单位、PID 输出极性和 PWM 最小起转占空比。
 未确认前禁止解除 `SafetyGate` 的自动控制限制。
