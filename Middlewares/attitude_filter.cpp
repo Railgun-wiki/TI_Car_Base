@@ -4,7 +4,7 @@
 namespace {
 constexpr float kDegPerRad = 57.2957795F;
 constexpr float kRadPerDeg = 0.0174532925F;
-}
+} // namespace
 namespace middleware {
 void AttitudeFilter::reset() noexcept {
   roll_ = {};
@@ -17,6 +17,10 @@ void AttitudeFilter::reset() noexcept {
   iEx_ = 0.0F;
   iEy_ = 0.0F;
   iEz_ = 0.0F;
+  filteredAx_ = 0.0F;
+  filteredAy_ = 0.0F;
+  filteredAz_ = 0.0F;
+  accelFilterInitialized_ = false;
   initialized_ = false;
 }
 float AttitudeFilter::updateKalman(KalmanAxis &axis, float measured, float rate,
@@ -91,16 +95,33 @@ void AttitudeFilter::updateMahony(car::ImuSample &sample, float dt) noexcept {
   const float gx = sample.gx * kRadPerDeg;
   const float gy = sample.gy * kRadPerDeg;
   const float gz = sample.gz * kRadPerDeg;
-  const float normSq =
-      sample.ax * sample.ax + sample.ay * sample.ay + sample.az * sample.az;
+  // Match the SJTU-AuTop pre-filtering strategy before using acceleration as
+  // the gravity reference. Keep the raw sample intact for telemetry/UI.
+  const float alpha = config_.mahonyAccelLowPassAlpha < 0.0F
+                          ? 0.0F
+                          : (config_.mahonyAccelLowPassAlpha > 1.0F
+                                 ? 1.0F
+                                 : config_.mahonyAccelLowPassAlpha);
+  if (!accelFilterInitialized_) {
+    filteredAx_ = sample.ax;
+    filteredAy_ = sample.ay;
+    filteredAz_ = sample.az;
+    accelFilterInitialized_ = true;
+  } else {
+    filteredAx_ += alpha * (sample.ax - filteredAx_);
+    filteredAy_ += alpha * (sample.ay - filteredAy_);
+    filteredAz_ += alpha * (sample.az - filteredAz_);
+  }
+  const float normSq = filteredAx_ * filteredAx_ + filteredAy_ * filteredAy_ +
+                       filteredAz_ * filteredAz_;
   // Degenerate input (free-fall or dropped frame): disable the accelerometer
   // cross-product correction and integrate gyro only, otherwise
   // fastInvSqrt(0) yields NaN and corrupts the quaternion state.
   const bool accValid = normSq > 1e-9F;
   const float normRecip = accValid ? fastInvSqrt(normSq) : 0.0F;
-  const float ax = accValid ? sample.ax * normRecip : 0.0F;
-  const float ay = accValid ? sample.ay * normRecip : 0.0F;
-  const float az = accValid ? sample.az * normRecip : 1.0F;
+  const float ax = accValid ? filteredAx_ * normRecip : 0.0F;
+  const float ay = accValid ? filteredAy_ * normRecip : 0.0F;
+  const float az = accValid ? filteredAz_ * normRecip : 1.0F;
 
   // Estimated gravity direction from current quaternion.
   const float vx = 2.0F * (q1_ * q3_ - q0_ * q2_);

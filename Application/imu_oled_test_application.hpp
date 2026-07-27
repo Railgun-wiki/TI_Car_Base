@@ -6,6 +6,7 @@
 #include "Middlewares/attitude_backend_config.h"
 #include "Middlewares/attitude_filter.hpp"
 #include "Middlewares/imu_reader.hpp"
+#include "Middlewares/telemetry.hpp"
 
 #if ATTITUDE_CONFIG_BACKEND != ATTITUDE_BACKEND_MAHONY
 #error "APP_IMU_OLED_TEST requires ATTITUDE_BACKEND_MAHONY"
@@ -21,20 +22,28 @@ public:
 private:
   void updateImu(std::uint32_t now) noexcept;
   void refreshOled(std::uint32_t now) noexcept;
+  void showStartupStatus(const char *imuStatus, const char *calStatus) noexcept;
+  void serviceOledFor(std::uint32_t durationMs) noexcept;
+  void publishTelemetry(std::uint32_t now) noexcept;
   void writeMeasurements() noexcept;
+  bool stationary(const car::ImuSample &sample, std::uint32_t now) noexcept;
 
   drivers::Led leds_{};
   drivers::Mpu6050 imu_{};
   middleware::ImuReader imuReader_{};
   middleware::AttitudeFilter attitude_{{middleware::AttitudeAlgorithm::Mahony}};
+  middleware::Telemetry telemetry_{};
   drivers::Ssd1306 oled_{};
   car::ImuSample sample_{};
   std::uint32_t lastImuMs_ = 0U;
   std::uint32_t lastOledTextMs_ = 0U;
   std::uint32_t lastOledServiceMs_ = 0U;
+  std::uint32_t lastTelemetryMs_ = 0U;
+  std::uint32_t stationarySinceMs_ = 0U;
   bool imuReady_ = false;
   bool gyroCalibrated_ = false;
   bool oledReady_ = false;
+  bool stationary_ = false;
 };
 
 } // namespace app

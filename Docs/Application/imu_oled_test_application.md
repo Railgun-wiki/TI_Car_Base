@@ -10,8 +10,17 @@
 
 显示值每 500 ms 刷新；OLED 传输每 2 ms 调用一次 `service()`，以遵守 I2C1 DMA
 分段、非 ISR 的约束。采样为 100 Hz 定时轮询，而非依赖 `MPU6050_INT`，因此可单独
-验证 I2C 原始读数与 Mahony 输出。启动阶段会执行约 1 秒的陀螺零偏校准，期间必须保持
-车辆静止；`CAL:OK` 表示该过程完成。
+验证 I2C 原始读数与 Mahony 输出。OLED 在 MPU 预热前初始化并显示 `KEEP STILL` 状态。
+为减小 MPU6050 上电热漂，测试 App 会先静置预热 2 秒，
+再执行 1000 次、间隔 5 ms 的陀螺零偏校准（约 5 秒）；期间必须保持车辆静止，`CAL:OK`
+表示该过程完成。Mahony 重力反馈使用 SJTU-AuTop 同款
+`alpha=0.3` 加速度一阶低通；界面仍显示未滤波的原始加速度，便于观察振动。
+
+UART0 同时以 20 Hz 输出 VOFA+ FireWater 命名帧：`roll`、`pitch`、`yaw`、纯加速度重力角
+`roll_acc`/`pitch_acc`、`ax..az`、`gx..gz`、`stationary`、`cal` 和 `tx_drop`。在持续静止
+1 秒（加速度模长 0.98–1.02 g，
+三轴校准后角速度均不超过 1 °/s）后，测试 App 会以 20 秒时间常数慢速更新 gyro bias，
+用于跟踪温漂；只要检测到运动便立即冻结更新。
 
 状态 LED2 表示 IMU 初始化与运行状态，LED3 表示 OLED 初始化与运行状态。构建成功仅证明
 软件集成正确；需在实机上验证 MPU 安装轴向、I2C 上拉和 OLED 显示内容。

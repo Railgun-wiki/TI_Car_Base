@@ -20,6 +20,10 @@ public:
   // poll; calling again overwrites the previous estimate.
   car::Status calibrateGyroBias(std::uint16_t samples = 200U,
                                 std::uint16_t delayMs = 5U) noexcept;
+  // Slowly adapts the stored gyro bias from an already bias-corrected sample.
+  // The caller must invoke this only after a reliable stationary detection.
+  void updateGyroBiasFromStationarySample(const car::ImuSample &sample,
+                                          float dtSeconds) noexcept;
   bool ready() const noexcept override { return ready_; }
 
 private:

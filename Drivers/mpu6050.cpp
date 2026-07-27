@@ -1,7 +1,7 @@
 #include "Drivers/mpu6050.hpp"
-#include <initializer_list>
 #include "BSP/i2c.hpp"
 #include "BSP/system.hpp"
+#include <initializer_list>
 namespace {
 constexpr std::uint8_t kDefaultAddress = 0x68U;
 constexpr std::uint8_t kAltAddress = 0x69U;
@@ -121,6 +121,20 @@ car::Status Mpu6050::calibrateGyroBias(std::uint16_t samples,
   gyroBiasY_ = sumY / static_cast<float>(samples);
   gyroBiasZ_ = sumZ / static_cast<float>(samples);
   return car::Status::Ok;
+}
+
+void Mpu6050::updateGyroBiasFromStationarySample(const car::ImuSample &sample,
+                                                 float dtSeconds) noexcept {
+  if (dtSeconds <= 0.0F || dtSeconds > 0.1F)
+    return;
+  // A slow 20-second time constant tracks thermal drift without reacting to
+  // individual samples. sample.g* already has the current bias removed, so
+  // adding its residual moves the stored bias toward the stationary reading.
+  constexpr float kBiasTimeConstantSeconds = 20.0F;
+  const float gain = dtSeconds / kBiasTimeConstantSeconds;
+  gyroBiasX_ += sample.gx * gain;
+  gyroBiasY_ += sample.gy * gain;
+  gyroBiasZ_ += sample.gz * gain;
 }
 
 } // namespace drivers

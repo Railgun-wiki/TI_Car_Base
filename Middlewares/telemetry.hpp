@@ -13,5 +13,9 @@ public:
                    std::uint32_t txDropped) const noexcept;
   bool formatConfig(char *output, std::size_t capacity,
                     const LineFollowerConfig &lineConfig) const noexcept;
+  bool formatImuFrame(char *output, std::size_t capacity,
+                      const car::ImuSample &imu, bool stationary,
+                      bool gyroCalibrated,
+                      std::uint32_t txDropped) const noexcept;
 };
 } // namespace middleware

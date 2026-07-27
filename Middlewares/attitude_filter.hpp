@@ -13,6 +13,9 @@ struct AttitudeFilterConfig final {
   // Mahony AHRS (SJTU-AuTop attitude_solution.c defaults).
   float mahonyKp = 0.17F;
   float mahonyKi = 0.004F;
+  // SJTU-AuTop filters accelerometer samples before gravity feedback. This
+  // reduces vibration-driven roll/pitch correction without filtering gyro.
+  float mahonyAccelLowPassAlpha = 0.3F;
 };
 class AttitudeFilter final {
 public:
@@ -36,6 +39,8 @@ private:
   // Mahony AHRS state.
   float q0_ = 1.0F, q1_ = 0.0F, q2_ = 0.0F, q3_ = 0.0F;
   float iEx_ = 0.0F, iEy_ = 0.0F, iEz_ = 0.0F;
+  float filteredAx_ = 0.0F, filteredAy_ = 0.0F, filteredAz_ = 0.0F;
+  bool accelFilterInitialized_ = false;
   bool initialized_ = false;
 };
 } // namespace middleware

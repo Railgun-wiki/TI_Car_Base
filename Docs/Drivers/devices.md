@@ -12,7 +12,7 @@
 
 `Drivers/imu_backend.hpp` 定义通用 IMU 抽象基类 `drivers::ImuBackend`，只暴露 `begin/poll/ready` 三个方法。软件姿态滤波路径（Complementary/Kalman/Mahony）只依赖本接口，不直接依赖具体芯片驱动；为其它 6 轴 IMU（如 ICM 系列）接入软件滤波只需新增一个 `ImuBackend` 实现。
 
-芯片专有的行为不进接口：`Mpu6050::calibrateGyroBias`（启动期静态零偏标定）和 `Mpu6050Dmp::notifyDataReady`（eMPL FIFO 读取前的 due 锁存）留在各自具体类，由 Application 经编译期 `ATTITUDE_CONFIG_BACKEND` 分支调用。`Mpu6050` 与 `Mpu6050Dmp` 均实现 `ImuBackend`，保持类型关系对称；虚析构 `= default`，工程带 `-fno-rtti -fno-exceptions`，禁止 `dynamic_cast`/`throw`。
+芯片专有的行为不进接口：`Mpu6050::calibrateGyroBias`（启动期静态零偏标定）、`Mpu6050::updateGyroBiasFromStationarySample`（由 Application 静止检测保护的慢速温漂跟踪）和 `Mpu6050Dmp::notifyDataReady`（eMPL FIFO 读取前的 due 锁存）留在各自具体类，由 Application 经编译期 `ATTITUDE_CONFIG_BACKEND` 分支调用。`Mpu6050` 与 `Mpu6050Dmp` 均实现 `ImuBackend`，保持类型关系对称；虚析构 `= default`，工程带 `-fno-rtti -fno-exceptions`，禁止 `dynamic_cast`/`throw`。
 
 ## `Bmi270`（BMI270 后端）
 
