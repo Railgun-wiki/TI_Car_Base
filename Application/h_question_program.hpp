@@ -35,7 +35,7 @@ struct HQuestionProgramConfig final {
   float headingBtoDDeg = H_QUESTION_HEADING_B_TO_D_DEG;
   float endpointArmRatio = H_QUESTION_ENDPOINT_ARM_RATIO;
   std::uint8_t minimumLineSensors = H_QUESTION_MINIMUM_LINE_SENSORS;
-  std::uint8_t endpointConfirmTicks = H_QUESTION_ENDPOINT_CONFIRM_TICKS;
+  std::uint32_t endpointConfirmMs = H_QUESTION_ENDPOINT_CONFIRM_MS;
   std::uint32_t countdownMs = H_QUESTION_COUNTDOWN_MS;
   std::uint32_t checkpointPauseMs = H_QUESTION_CHECKPOINT_PAUSE_MS;
 };
@@ -89,7 +89,8 @@ private:
   car::EncoderTicks segmentStartTicks_{};
   float segmentYawOriginDeg_ = 0.0F;
   float lastDistanceCm_ = 0.0F;
-  std::uint8_t endpointConfirmCount_ = 0U;
+  std::uint32_t endpointCandidateSinceMs_ = 0U;
+  bool endpointCandidateActive_ = false;
 };
 
 } // namespace app

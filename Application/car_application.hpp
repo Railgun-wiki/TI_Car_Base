@@ -1,4 +1,6 @@
 #pragma once
+#include "Config/status_led_config.hpp"
+#include "Config/vehicle_tuning.hpp"
 #include "Drivers/active_buzzer.hpp"
 #include "Drivers/encoder.hpp"
 #include "Drivers/keypad.hpp"
@@ -61,8 +63,12 @@ private:
 #endif
   };
   drivers::Ssd1306 oled_{};
-  middleware::LineFollower follower_{{45.0F, 0.0F, 0.0F, 180}};
-  middleware::DifferentialDrive drive_{{0.15F}};
+  middleware::LineFollower follower_{
+      {LINE_FOLLOW_KP, LINE_FOLLOW_KI, LINE_FOLLOW_KD, LINE_FOLLOW_CRUISE,
+       VEHICLE_TUNING_LINE_HOLD_MS, VEHICLE_TUNING_LINE_SEARCH_TIMEOUT_MS,
+       VEHICLE_TUNING_LINE_HOLD_SPEED_RATIO,
+       VEHICLE_TUNING_LINE_SEARCH_SPEED_RATIO}};
+  middleware::DifferentialDrive drive_{{LINE_FOLLOW_TRACK_WIDTH_METERS}};
   middleware::SafetyGate gate_{};
   middleware::Telemetry telemetry_{};
   middleware::VofaProtocol vofa_{};
@@ -83,5 +89,7 @@ private:
   bool heartbeat_ = false;
   bool lineFollowEnabled_ = false;
   car::LineSample lineSample_{};
+  middleware::LineTrackingState lineTrackingState_ =
+      middleware::LineTrackingState::Lost;
 };
 } // namespace app

@@ -22,6 +22,18 @@ ring 满时丢弃新 byte，并分别累计 drop counter。
 `bsp::delayMs()` 基于 `g_millis` 的 SysTick 倒数忙等，可在调度器启动前和安全
 的 `init()` 路径（如 MPU 静态零偏标定）中使用；不得在中断或实时控制回路里调用。
 
+三颗状态 LED 均为低电平点亮：LED1=`PB14`、LED2=`PB18`、LED3=`PA22`。
+LED2 位于中间，LED1/LED3 位于两侧；两侧在状态含义上镜像等价，例如
+“LED1+LED2 亮”与“LED2+LED3 亮”属于同一状态类别。Driver 以
+`LedPattern{led1, led2, led3}` 独立配置 `Off/On/Blink`，`service(nowMs)` 每
+`VEHICLE_TUNING_LED_BLINK_HALF_PERIOD_MS` 翻转 Blink 输出，不阻塞主循环。
+所有应用状态组合集中在 `Config/status_led_config.hpp`。
+
+NRF24L01 SPI 当前未加入 SysConfig，也不会初始化。为后续硬件版本保留原规划：
+SPI0 SCLK=`PB18`、MOSI=`PB17`、MISO=`PB19`、CS=`PA2`、CE=`PA7`。其中
+SCLK `PB18` 与 LED2 冲突；启用 NRF24L01 前必须重新决定 LED2/SPI 复用策略，
+不能同时分配。
+
 `bsp::init()` 不直接调用生成的 `SYSCFG_DL_init()`，而是按生成函数手工排列为
 Power/GPIO/SYSCTL/PWM → UART0 → I2C0/I2C1 → 其余 UART/DMA/clock。这样 UART0
 可在外设探测前输出启动日志。**若 SysConfig 配置发生变更，必须核对生成的

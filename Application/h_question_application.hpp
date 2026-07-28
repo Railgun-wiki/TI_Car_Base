@@ -3,6 +3,7 @@
 #include <array>
 
 #include "Application/h_question_program.hpp"
+#include "Config/status_led_config.hpp"
 #include "Config/vehicle_tuning.hpp"
 #include "Drivers/active_buzzer.hpp"
 #include "Drivers/encoder.hpp"
@@ -118,16 +119,17 @@ private:
 #endif
   };
   drivers::Ssd1306 oled_{};
-  middleware::LineFollower lineFollower_{{H_QUESTION_LINE_KP,
-                                           H_QUESTION_LINE_KI,
-                                           H_QUESTION_LINE_KD,
-                                           H_QUESTION_ARC_SPEED_MM_PER_SECOND}};
-  middleware::Pid headingPid_{{H_QUESTION_HEADING_KP,
-                                H_QUESTION_HEADING_KI,
-                                H_QUESTION_HEADING_KD,
-                                static_cast<float>(H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND -
-                                                   H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND),
-                                H_QUESTION_HEADING_INTEGRAL_LIMIT}};
+  middleware::LineFollower lineFollower_{
+      {H_QUESTION_LINE_KP, H_QUESTION_LINE_KI, H_QUESTION_LINE_KD,
+       H_QUESTION_ARC_SPEED_MM_PER_SECOND, VEHICLE_TUNING_LINE_HOLD_MS,
+       VEHICLE_TUNING_LINE_SEARCH_TIMEOUT_MS,
+       VEHICLE_TUNING_LINE_HOLD_SPEED_RATIO,
+       VEHICLE_TUNING_LINE_SEARCH_SPEED_RATIO}};
+  middleware::Pid headingPid_{
+      {H_QUESTION_HEADING_KP, H_QUESTION_HEADING_KI, H_QUESTION_HEADING_KD,
+       static_cast<float>(H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND -
+                          H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND),
+       H_QUESTION_HEADING_INTEGRAL_LIMIT}};
   middleware::WheelSpeedController speedController_{{
       {VEHICLE_TUNING_WHEEL_DIAMETER_METERS, VEHICLE_TUNING_GEAR_RATIO,
        VEHICLE_TUNING_ENCODER_COUNTS_PER_MOTOR_REVOLUTION,
@@ -143,10 +145,13 @@ private:
   middleware::SafetyGate gate_{};
   HQuestionProgram race_{raceConfig_};
   car::LineSample lineSample_{};
+  middleware::LineTrackingState lineTrackingState_ =
+      middleware::LineTrackingState::Lost;
   car::ImuSample imuSample_{};
   car::WheelCommand proposal_{};
   std::uint32_t lastControlMs_ = 0U;
   std::uint32_t lastOuterControlMs_ = 0U;
+  std::uint32_t lastLineFollowerMs_ = 0U;
   std::uint32_t lastControlLogMs_ = 0U;
   std::uint32_t lastUserLedPulseMs_ = 0U;
   std::uint32_t lastOledTextMs_ = 0U;

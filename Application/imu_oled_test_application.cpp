@@ -5,6 +5,7 @@
 
 #include "BSP/system.hpp"
 #include "BSP/uart.hpp"
+#include "Config/status_led_config.hpp"
 
 namespace app {
 namespace {
@@ -27,11 +28,23 @@ bool elapsed(std::uint32_t now, std::uint32_t &last,
   last = now;
   return true;
 }
+
+drivers::LedPattern readinessLedPattern(bool imuReady,
+                                        bool oledReady) noexcept {
+  const std::uint8_t devices = static_cast<std::uint8_t>(imuReady) +
+                               static_cast<std::uint8_t>(oledReady);
+  if (devices == 0U)
+    return config::status_led::kDevicesNone;
+  if (devices == 1U)
+    return config::status_led::kDevicesOne;
+  return config::status_led::kDevicesTwo;
+}
 } // namespace
 
 void ImuOledTestApplication::init() noexcept {
   leds_.setUser(false);
-  leds_.setStatus(0U, true);
+  leds_.setPattern(config::status_led::kStartup);
+  leds_.service(bsp::millis());
 
   // Bring up and visibly refresh the display before the deliberately blocking
   // warm-up and bias calibration, so the required stationary period is clear.
@@ -58,8 +71,8 @@ void ImuOledTestApplication::init() noexcept {
     attitude_.reset();
   }
 
-  leds_.setStatus(1U, imuReady_);
-  leds_.setStatus(2U, oledReady_);
+  leds_.setPattern(readinessLedPattern(imuReady_, oledReady_));
+  leds_.service(bsp::millis());
   if (oledReady_)
     writeMeasurements();
 }
@@ -77,6 +90,7 @@ void ImuOledTestApplication::serviceOledFor(std::uint32_t durationMs) noexcept {
   const std::uint32_t start = bsp::millis();
   while (oledReady_ &&
          static_cast<std::uint32_t>(bsp::millis() - start) < durationMs) {
+    leds_.service(bsp::millis());
     const car::Status status = oled_.service();
     if (status != car::Status::Ok && status != car::Status::Busy) {
       oledReady_ = false;
@@ -103,7 +117,6 @@ void ImuOledTestApplication::updateImu(std::uint32_t now) noexcept {
     imuReady_ = false;
     gyroCalibrated_ = false;
     stationary_ = false;
-    leds_.setStatus(1U, false);
   }
 }
 
@@ -180,7 +193,6 @@ void ImuOledTestApplication::refreshOled(std::uint32_t now) noexcept {
   const car::Status status = oled_.service();
   if (status != car::Status::Ok && status != car::Status::Busy) {
     oledReady_ = false;
-    leds_.setStatus(2U, false);
   }
 }
 
@@ -189,6 +201,8 @@ void ImuOledTestApplication::step() noexcept {
   updateImu(now);
   refreshOled(now);
   publishTelemetry(now);
+  leds_.setPattern(readinessLedPattern(imuReady_, oledReady_));
+  leds_.service(now);
 }
 
 } // namespace app

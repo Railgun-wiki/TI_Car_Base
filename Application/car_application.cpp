@@ -5,8 +5,36 @@
 
 namespace app {
 namespace {
-constexpr std::int16_t kDefaultCruise = 180;
-constexpr std::int16_t kCruiseStep = 10;
+const char *lineStateText(middleware::LineTrackingState state) noexcept {
+  switch (state) {
+  case middleware::LineTrackingState::Tracking:
+    return "LINE:TRACK";
+  case middleware::LineTrackingState::Holding:
+    return "LINE:HOLD";
+  case middleware::LineTrackingState::Searching:
+    return "LINE:SEARCH";
+  case middleware::LineTrackingState::Lost:
+    return "LINE:LOST";
+  }
+  return "LINE:LOST";
+}
+
+drivers::LedPattern
+lineLedPattern(bool enabled, middleware::LineTrackingState state) noexcept {
+  if (!enabled)
+    return config::status_led::kLineDisabled;
+  switch (state) {
+  case middleware::LineTrackingState::Tracking:
+    return config::status_led::kLineTracking;
+  case middleware::LineTrackingState::Holding:
+    return config::status_led::kLineHolding;
+  case middleware::LineTrackingState::Searching:
+    return config::status_led::kLineSearching;
+  case middleware::LineTrackingState::Lost:
+    return config::status_led::kLineLost;
+  }
+  return config::status_led::kDevicesNone;
+}
 
 void sendText(const char *text) noexcept {
   if (text == nullptr)
@@ -31,10 +59,12 @@ void formatCruise(char *text, std::int16_t cruise) noexcept {
 
 void CarApplication::init() noexcept {
   motor_.stop();
-  leds_.setStatus(0U, true);
+  leds_.setPattern(config::status_led::kStartup);
+  leds_.service(bsp::millis());
   buzzer_.set(true);
   const std::uint32_t start = bsp::millis();
-  while (static_cast<std::uint32_t>(bsp::millis() - start) < 30U) {
+  while (static_cast<std::uint32_t>(bsp::millis() - start) <
+         VEHICLE_TUNING_STARTUP_TONE_MS) {
   }
   buzzer_.set(false);
 #if ATTITUDE_CONFIG_BACKEND == ATTITUDE_BACKEND_DMP
@@ -52,8 +82,15 @@ void CarApplication::init() noexcept {
 #endif
 #endif
   oledReady_ = oled_.begin() == car::Status::Ok;
-  leds_.setStatus(1U, imuReady_);
-  leds_.setStatus(2U, oledReady_);
+  const std::uint8_t devices = static_cast<std::uint8_t>(imuReady_) +
+                               static_cast<std::uint8_t>(oledReady_);
+  if (devices == 0U)
+    leds_.setPattern(config::status_led::kDevicesNone);
+  else if (devices == 1U)
+    leds_.setPattern(config::status_led::kDevicesOne);
+  else
+    leds_.setPattern(config::status_led::kDevicesTwo);
+  leds_.service(bsp::millis());
 }
 
 void CarApplication::processKeyInteraction() noexcept {
@@ -75,12 +112,13 @@ void CarApplication::processKeyInteraction() noexcept {
 
   const auto config = follower_.config();
   std::int16_t cruise = config.cruise;
-  if (leftPressed && cruise >= kCruiseStep)
-    cruise = static_cast<std::int16_t>(cruise - kCruiseStep);
-  if (rightPressed && cruise <= 500 - kCruiseStep)
-    cruise = static_cast<std::int16_t>(cruise + kCruiseStep);
+  if (leftPressed && cruise >= LINE_FOLLOW_CRUISE_STEP)
+    cruise = static_cast<std::int16_t>(cruise - LINE_FOLLOW_CRUISE_STEP);
+  if (rightPressed &&
+      cruise <= LINE_FOLLOW_MAX_CRUISE - LINE_FOLLOW_CRUISE_STEP)
+    cruise = static_cast<std::int16_t>(cruise + LINE_FOLLOW_CRUISE_STEP);
   if (downPressed)
-    cruise = kDefaultCruise;
+    cruise = LINE_FOLLOW_CRUISE;
   if (cruise != config.cruise)
     (void)follower_.configure(config.kp, config.ki, config.kd, cruise);
 }
@@ -88,16 +126,18 @@ void CarApplication::processKeyInteraction() noexcept {
 void CarApplication::refreshOled(std::uint32_t now) noexcept {
   if (!oledReady_)
     return;
-  if (static_cast<std::uint32_t>(now - lastOledTextMs_) >= 100U) {
+  if (static_cast<std::uint32_t>(now - lastOledTextMs_) >=
+      LINE_FOLLOW_OLED_TEXT_PERIOD_MS) {
     lastOledTextMs_ = now;
     char cruise[8]{};
     formatCruise(cruise, follower_.config().cruise);
     (void)oled_.writeLine(0U, lineFollowEnabled_ ? "MODE:RUN" : "MODE:HOLD");
     (void)oled_.writeLine(1U, cruise);
-    (void)oled_.writeLine(2U, lineSample_.detected ? "LINE:OK" : "LINE:LOST");
+    (void)oled_.writeLine(2U, lineStateText(lineTrackingState_));
     (void)oled_.writeLine(3U, imuReady_ ? "IMU:OK" : "IMU:ERR");
   }
-  if (static_cast<std::uint32_t>(now - lastOledServiceMs_) >= 2U) {
+  if (static_cast<std::uint32_t>(now - lastOledServiceMs_) >=
+      LINE_FOLLOW_OLED_SERVICE_PERIOD_MS) {
     lastOledServiceMs_ = now;
     const car::Status status = oled_.service();
     if (status != car::Status::Ok && status != car::Status::Busy)
@@ -107,11 +147,17 @@ void CarApplication::refreshOled(std::uint32_t now) noexcept {
 
 void CarApplication::step() noexcept {
   const std::uint32_t now = bsp::millis();
-  if (static_cast<std::uint32_t>(now - lastLineMs_) >= 5U) {
+  if (static_cast<std::uint32_t>(now - lastLineMs_) >=
+      LINE_FOLLOW_CONTROL_PERIOD_MS) {
+    const std::uint32_t elapsedMs =
+        lastLineMs_ == 0U ? LINE_FOLLOW_CONTROL_PERIOD_MS
+                          : static_cast<std::uint32_t>(now - lastLineMs_);
     lastLineMs_ = now;
     lineSample_ = line_.read();
-    const car::VehicleCommand command = follower_.update(lineSample_, 0.005F);
-    lineWheelCommand_ = drive_.mix(command);
+    const auto result =
+        follower_.update(lineSample_, static_cast<float>(elapsedMs) / 1000.0F);
+    lineTrackingState_ = result.state;
+    lineWheelCommand_ = drive_.mix(result.command);
   }
   if (imuReady_ && bsp::consumeImuDataReady()) {
     car::ImuSample sample{};
@@ -142,7 +188,8 @@ void CarApplication::step() noexcept {
   // Keep the enable action deliberate: CENTER arms the car, while UP is the
   // hold-to-run control. Releasing either key stops immediately.
   const bool armed =
-      center && static_cast<std::uint32_t>(now - centerSinceMs_) >= 500U;
+      center && static_cast<std::uint32_t>(now - centerSinceMs_) >=
+                    LINE_FOLLOW_ENABLE_HOLD_MS;
   lineFollowEnabled_ = armed && keys_.pressed(car::Key::Up);
   motor_.set(gate_.apply(lineWheelCommand_, lineFollowEnabled_));
   processKeyInteraction();
@@ -177,12 +224,14 @@ void CarApplication::step() noexcept {
       sendText("err:FORMAT\r\n");
     }
   }
-  if (static_cast<std::uint32_t>(now - lastHeartbeatMs_) >= 500U) {
+  if (static_cast<std::uint32_t>(now - lastHeartbeatMs_) >=
+      LINE_FOLLOW_HEARTBEAT_PERIOD_MS) {
     lastHeartbeatMs_ = now;
     heartbeat_ = !heartbeat_;
     leds_.setUser(heartbeat_);
   }
-  if (static_cast<std::uint32_t>(now - lastTelemetryMs_) >= 50U) {
+  if (static_cast<std::uint32_t>(now - lastTelemetryMs_) >=
+      LINE_FOLLOW_TELEMETRY_PERIOD_MS) {
     lastTelemetryMs_ = now;
     char text[224]{};
     if (telemetry_.formatFrame(
@@ -191,6 +240,8 @@ void CarApplication::step() noexcept {
             bsp::uartRxDroppedBytes(), bsp::uartTxDroppedFrames()))
       sendText(text);
   }
+  leds_.setPattern(lineLedPattern(lineFollowEnabled_, lineTrackingState_));
+  leds_.service(now);
   refreshOled(now);
 }
 } // namespace app

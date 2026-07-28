@@ -57,7 +57,7 @@ W25Q128 的 PB6..PB9、板载 PB21 key 和 PA18 BSL 不纳入本固件，原因�
 
 ## 5. 姿态后端
 
-在 `Middlewares/attitude_backend_config.h` 选择一个后端：
+在 `Config/build_config.h` 选择一个后端：
 
 ```c
 #define ATTITUDE_CONFIG_BACKEND ATTITUDE_BACKEND_COMPLEMENTARY
@@ -98,8 +98,9 @@ portability patch 仅限：添加 `EMPL_TARGET_MSPM0` 分支、Target 编译包�
 - 编码器 ISR 只更新 ticks；MPU PB11 ISR 只置 data-ready。
 - 主循环以 200 Hz 读取灰度并执行巡线 PID、按 IMU data-ready 读取姿态、20 Hz
   输出 VOFA+ telemetry；OLED 为低优先级。
-- 循线 Demo：CENTER 连续按住 500 ms 后，同时按住 CENTER + UP 才运行；松手或
-  丢线停车。
+- 循线 Demo：CENTER 连续按住 500 ms 后，同时按住 CENTER + UP 才运行；松手立即
+  停车。丢线先保持最近转向 150 ms，再搜索至总计 600 ms，仍未找回才停车；
+  按键保持时重捕获会自动恢复。
 - 初始化失败、DMP/I2C/FIFO 错误均调用 `MotorDriver::stop()`。软件滤波或巡线算法
   的输出必须经过 `SafetyGate` 才能驱动电机。
 - VOFA+ 调参只允许在循线未 enable 时执行；UART ISR 只搬运固定 ring buffer。

@@ -55,8 +55,9 @@ void HQuestionProgram::cancel() noexcept {
 
 void HQuestionProgram::fail() noexcept { state_ = HRaceState::Fault; }
 
-HRaceSnapshot HQuestionProgram::update(std::uint32_t now, car::EncoderTicks ticks,
-                                       float yawDeg, car::LineSample line) noexcept {
+HRaceSnapshot HQuestionProgram::update(std::uint32_t now,
+                                       car::EncoderTicks ticks, float yawDeg,
+                                       car::LineSample line) noexcept {
   if (state_ == HRaceState::Countdown &&
       static_cast<std::uint32_t>(now - stateSinceMs_) >= config_.countdownMs) {
     state_ = HRaceState::Running;
@@ -73,15 +74,20 @@ HRaceSnapshot HQuestionProgram::update(std::uint32_t now, car::EncoderTicks tick
              ? !line.detected
              : countActiveSensors(line.bits) >= config_.minimumLineSensors);
     if (distanceReached) {
-      endpointConfirmCount_ = 0U;
+      endpointCandidateActive_ = false;
     } else if (sensorReached) {
-      if (endpointConfirmCount_ < config_.endpointConfirmTicks)
-        ++endpointConfirmCount_;
+      if (!endpointCandidateActive_) {
+        endpointCandidateSinceMs_ = now;
+        endpointCandidateActive_ = true;
+      }
     } else {
-      endpointConfirmCount_ = 0U;
+      endpointCandidateActive_ = false;
     }
-    if (distanceReached ||
-        endpointConfirmCount_ >= config_.endpointConfirmTicks) {
+    const bool endpointConfirmed =
+        endpointCandidateActive_ &&
+        static_cast<std::uint32_t>(now - endpointCandidateSinceMs_) >=
+            config_.endpointConfirmMs;
+    if (distanceReached || endpointConfirmed) {
       ++completedSegments_;
       stateSinceMs_ = now;
       state_ = completedSegments_ >= segmentCount() * lapCount()
@@ -118,7 +124,8 @@ void HQuestionProgram::beginSegment(car::EncoderTicks ticks,
   segmentStartTicks_ = ticks;
   segmentYawOriginDeg_ = yawDeg;
   lastDistanceCm_ = 0.0F;
-  endpointConfirmCount_ = 0U;
+  endpointCandidateSinceMs_ = 0U;
+  endpointCandidateActive_ = false;
 }
 
 float HQuestionProgram::distanceCm(car::EncoderTicks ticks) const noexcept {
@@ -130,7 +137,8 @@ float HQuestionProgram::distanceCm(car::EncoderTicks ticks) const noexcept {
   const std::int32_t left = ticks.left - segmentStartTicks_.left;
   const std::int32_t right = ticks.right - segmentStartTicks_.right;
   const float averagedCounts =
-      static_cast<float>((left < 0 ? -left : left) + (right < 0 ? -right : right)) /
+      static_cast<float>((left < 0 ? -left : left) +
+                         (right < 0 ? -right : right)) /
       2.0F;
   return averagedCounts * cmPerCount;
 }

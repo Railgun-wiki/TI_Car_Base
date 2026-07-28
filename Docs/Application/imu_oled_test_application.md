@@ -4,7 +4,7 @@
 验证应用。它不启动电机、循迹或 UART 控制逻辑，只轮询 MPU6050、运行 Mahony
 姿态解算并以低优先级 DMA 刷新 OLED。
 
-`Application/app_selector.hpp` 当前默认选择该 App。OLED 以完整 `128x64` 的八行
+由 `Config/build_config.h` 的 `APP_ACTIVE` 选择该 App。OLED 以完整 `128x64` 的八行
 文本区域一次显示 IMU 状态、`CAL` 上电零偏校准状态、roll/pitch/yaw、`AX`/`AY`/`AZ`
 （单位 g）以及 `GX`/`GY`/`GZ`（单位 deg/s）。
 
@@ -22,5 +22,6 @@ UART0 同时以 20 Hz 输出 VOFA+ FireWater 命名帧：`roll`、`pitch`、`yaw
 三轴校准后角速度均不超过 1 °/s）后，测试 App 会以 20 秒时间常数慢速更新 gyro bias，
 用于跟踪温漂；只要检测到运动便立即冻结更新。
 
-状态 LED2 表示 IMU 初始化与运行状态，LED3 表示 OLED 初始化与运行状态。构建成功仅证明
-软件集成正确；需在实机上验证 MPU 安装轴向、I2C 上拉和 OLED 显示内容。
+启动期间三灯闪烁；无设备就绪时全熄，一个设备就绪时点亮一盏边灯，IMU 与 OLED
+均就绪时点亮中间灯和一盏边灯。左右边灯镜像等价，不再用固定边灯区分设备。
+构建成功仅证明软件集成正确；需在实机上验证 MPU 安装轴向、I2C 上拉和 OLED 显示内容。

@@ -3,15 +3,12 @@
 #include "Drivers/imu_backend.hpp"
 #include "Middlewares/attitude_backend_config.h"
 
+// BMI270_ONBOARD_FUSION is centralized in Config/build_config.h.
 // Compile-time switch for Bmi270::poll output semantics.
 // Undefined/0 (default): poll() fills ax..gz only (g, deg/s); Euler left zero
 //   and computed upstream by ImuReader + AttitudeFilter (same as Mpu6050).
 // 1: poll() additionally runs an on-chip-style Mahony fusion and fills
 //   rollDeg/pitchDeg/yawDeg directly, bypassing AttitudeFilter.
-#ifndef BMI270_ONBOARD_FUSION
-#define BMI270_ONBOARD_FUSION 0
-#endif
-
 namespace drivers {
 
 // BMI270 6-axis IMU driver over I2C0. Implements drivers::ImuBackend so the

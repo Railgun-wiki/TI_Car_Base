@@ -4,6 +4,10 @@
 
 ## 初始化
 
+普通循线 PID、巡航速度、按键步进和调度周期统一由
+`Config/vehicle_tuning.hpp` 的 `LINE_FOLLOW_*` 宏配置；三灯组合统一定义在
+`Config/status_led_config.hpp`，Application 不保存重复默认值。
+
 1. 显式 `MotorDriver::stop()`；
 2. LED/蜂鸣器给出上电提示；
 3. 按已选姿态后端初始化：DMP 分支直接 `Mpu6050Dmp::begin()`；软件滤波分支 `Mpu6050::begin()` + `calibrateGyroBias()`（具体类，启动期一次性）+ `ImuReader::reset()`；
@@ -14,7 +18,7 @@
 
 | 工作 | 节奏 | 规则 |
 | --- | --- | --- |
-| 灰度采样/巡线 PID | 200 Hz | 固定 dt=5 ms，更新轮端建议。 |
+| 灰度采样/巡线 PID | 目标 200 Hz | 使用 `millis()` 实测 elapsed time 更新轮端建议。 |
 | IMU | PB11 data-ready | 主循环读取；ISR 只置标志。软件滤波分支经 `ImuReader::step(rawImu_, softwareAttitude_, now, sample)` 驱动（`rawImu_` 以 `ImuBackend&` 上溯），DMP 分支直接 `notifyDataReady` + `poll`。 |
 | VOFA+ telemetry | 20 Hz | UART ring 满时丢弃完整帧。 |
 | VOFA+ command | 主循环轮询 | 仅停车时更新循线参数。 |
@@ -41,8 +45,14 @@
 
 - CENTER 连续按住 500 ms 后 armed，继续同时按住 CENTER + UP 才运行；
 - 松开 CENTER 或 UP 时立即发布零轮速命令；
-- 8 路灰度均未检测到线时，`LineFollower` 发布零命令并停车；
-- 默认巡航命令为 180，PID 为 `45/0/0`；这些参数只完成编译验证，
+- 8 路灰度均未检测到线时，`LineFollower` 先保持最近转向 150 ms，再按最近
+  误差方向低速搜索；总丢线时间达到 600 ms 后发布零命令。按键仍保持使能时，
+  重新检测到线会自动恢复 Tracking；
+- OLED 第三行显示 `TRACK/HOLD/SEARCH/LOST`，便于实车确认恢复阶段；
+- 三灯状态：未使能=`两边亮/中间熄`，Tracking=`全亮`，
+  Holding=`边灯亮/中间闪`，Searching=`中间亮/边灯闪`，Lost=`仅中间闪`；
+  左右边灯的镜像组合含义相同；
+- 默认巡航命令为 180，PID 为 `45/0/0`，均由 `LINE_FOLLOW_*` 宏配置；这些参数只完成编译验证，
   必须根据实际车速、赛道曲率和传感器高度进行实车标定；
 - 当前 Demo 是开环 PWM 循线，不包含参考工程的编码器速度 PID 闭环。
 
@@ -74,6 +84,9 @@ UART 解析字节数；两者都不应放入 ISR。
 
 ## 验证状态
 
-- 已构建：2026-07-26 使用 CCS `buildProject` 完成 Debug 构建，无 errors/warnings；
+- 已构建：2026-07-28 使用 SysConfig CLI 1.28.0 校验，并在临时 CCS 配置中以
+  `APP_ACTIVE=0` 完成 Debug 全量构建；0 errors，唯一 warning 为 linker 对项目
+  默认 `0x800` heap 的提示。Flash 使用 27,304 B，SRAM 使用 3,139 B；
 - 待实机验证：灰度高/低电平极性、左右传感器顺序、电机正方向、急弯差速、
-  丢线停车距离、CENTER + UP 松手停车时延、OLED DMA 刷新和按键去抖。
+  丢线保持/搜索方向、600 ms 最大盲行距离、自动重捕获、CENTER + UP 松手停车
+  时延、OLED DMA 刷新和按键去抖。

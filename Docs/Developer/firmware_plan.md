@@ -40,7 +40,7 @@ Application -> Middlewares -> Drivers -> BSP -> SysConfig / DriverLib
 firmware、FIFO parser、寄存器流程或姿态算法。DMP 使用 100 Hz、6-axis
 quaternion 和 calibrated gyro；yaw 是相对航向，不能视为绝对航向。
 
-`Middlewares/attitude_backend_config.h` 的
+`Config/build_config.h` 的
 `ATTITUDE_CONFIG_BACKEND` 默认使用 `ATTITUDE_BACKEND_COMPLEMENTARY`，也可选
 `ATTITUDE_BACKEND_DMP`、`ATTITUDE_BACKEND_KALMAN` 与 `ATTITUDE_BACKEND_MAHONY`。
 三者都输出相同的 `ImuSample`；软件滤波使用 MPU6050 原始采样，不编译

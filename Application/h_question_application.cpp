@@ -11,9 +11,14 @@ constexpr std::uint32_t kControlPeriodMs = H_QUESTION_CONTROL_PERIOD_MS;
 constexpr std::uint32_t kOuterControlPeriodMs =
     H_QUESTION_OUTER_CONTROL_PERIOD_MS;
 constexpr std::uint32_t kControlLogPeriodMs = H_QUESTION_CONTROL_LOG_PERIOD_MS;
-constexpr std::uint32_t kUserLedPeriodMs = 1000U;
-constexpr std::uint32_t kUserLedPulseMs = 50U;
-constexpr std::uint32_t kStartupToneMs = 30U;
+
+void constrainForwardTarget(std::int16_t &target) noexcept {
+  if (target <= 0) {
+    target = 0;
+  } else if (target < H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND) {
+    target = H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND;
+  }
+}
 
 void appendText(char *destination, std::uint8_t &length,
                 const char *source) noexcept {
@@ -68,6 +73,24 @@ const char *programText(HProgram program) noexcept {
   }
   return "P?";
 }
+
+drivers::LedPattern raceLedPattern(const HRaceSnapshot &race) noexcept {
+  switch (race.state) {
+  case HRaceState::Menu:
+    return config::status_led::kRaceMenu;
+  case HRaceState::Countdown:
+    return config::status_led::kRaceCountdown;
+  case HRaceState::Running:
+    return config::status_led::kRaceRunning;
+  case HRaceState::Checkpoint:
+    return config::status_led::kRaceCheckpoint;
+  case HRaceState::Finished:
+    return config::status_led::kRaceFinished;
+  case HRaceState::Fault:
+    return config::status_led::kRaceFault;
+  }
+  return config::status_led::kDevicesNone;
+}
 } // namespace
 
 bool HQuestionApplication::I2cScan::contains(
@@ -81,11 +104,10 @@ bool HQuestionApplication::I2cScan::contains(
 void HQuestionApplication::init() noexcept {
   motor_.stop();
   leds_.setUser(false);
-  leds_.setStatus(0U, true);
-  leds_.setStatus(1U, true);
-  leds_.setStatus(2U, true);
+  leds_.setPattern(config::status_led::kStartup);
   buzzer_.set(true);
   startupSinceMs_ = bsp::millis();
+  leds_.service(startupSinceMs_);
   startupState_ = StartupState::Tone;
 }
 
@@ -166,20 +188,24 @@ void HQuestionApplication::configureRace() noexcept {
 }
 
 void HQuestionApplication::updateDeviceLeds() noexcept {
-  leds_.setStatus(0U, imuReady_ || oledReady_);
-  leds_.setStatus(1U, imuReady_ && oledReady_);
-  leds_.setStatus(2U, false);
+  const std::uint8_t devices = static_cast<std::uint8_t>(imuReady_) +
+                               static_cast<std::uint8_t>(oledReady_);
+  if (devices == 0U)
+    leds_.setPattern(config::status_led::kDevicesNone);
+  else if (devices == 1U)
+    leds_.setPattern(config::status_led::kDevicesOne);
+  else
+    leds_.setPattern(config::status_led::kDevicesTwo);
 }
 
 void HQuestionApplication::startupStep(std::uint32_t now) noexcept {
   switch (startupState_) {
   case StartupState::Tone:
-    if (static_cast<std::uint32_t>(now - startupSinceMs_) < kStartupToneMs)
+    if (static_cast<std::uint32_t>(now - startupSinceMs_) <
+        VEHICLE_TUNING_STARTUP_TONE_MS)
       return;
     buzzer_.set(false);
-    leds_.setStatus(0U, false);
-    leds_.setStatus(1U, false);
-    leds_.setStatus(2U, false);
+    leds_.setPattern(config::status_led::kDevicesNone);
     startupState_ = StartupState::BootLog;
     return;
   case StartupState::BootLog:
@@ -422,6 +448,8 @@ void HQuestionApplication::updateControl(std::uint32_t now) noexcept {
     headingPid_.reset();
     lineFollower_.reset();
     speedController_.reset();
+    lineTrackingState_ = middleware::LineTrackingState::Lost;
+    lastLineFollowerMs_ = 0U;
     return;
   }
 
@@ -430,9 +458,24 @@ void HQuestionApplication::updateControl(std::uint32_t now) noexcept {
     lastOuterControlMs_ = now;
     car::VehicleCommand command{};
     if (race.segmentType == HSegmentType::Arc) {
-      command = lineFollower_.update(
-          lineSample_, static_cast<float>(kOuterControlPeriodMs) / 1000.0F);
+      const std::uint32_t elapsedMs =
+          lastLineFollowerMs_ == 0U
+              ? kOuterControlPeriodMs
+              : static_cast<std::uint32_t>(now - lastLineFollowerMs_);
+      lastLineFollowerMs_ = now;
+      const auto result = lineFollower_.update(
+          lineSample_, static_cast<float>(elapsedMs) / 1000.0F);
+      lineTrackingState_ = result.state;
+      command = result.command;
+      if (result.state == middleware::LineTrackingState::Lost) {
+        race_.fail();
+        proposal_ = {};
+        motor_.stop();
+        speedController_.reset();
+        return;
+      }
     } else {
+      lastLineFollowerMs_ = 0U;
       const float turn = headingPid_.update(
           race.targetYawDeg, imuSample_.yawDeg,
           static_cast<float>(kOuterControlPeriodMs) / 1000.0F);
@@ -440,16 +483,18 @@ void HQuestionApplication::updateControl(std::uint32_t now) noexcept {
                  static_cast<std::int16_t>(turn)};
     }
     proposal_ = drive_.mix(command);
-    if (proposal_.left < H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND)
-      proposal_.left = H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND;
-    if (proposal_.right < H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND)
-      proposal_.right = H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND;
+    const bool applyMinimum =
+        race.segmentType != HSegmentType::Arc ||
+        lineTrackingState_ == middleware::LineTrackingState::Tracking;
+    if (applyMinimum) {
+      constrainForwardTarget(proposal_.left);
+      constrainForwardTarget(proposal_.right);
+    }
   }
 
   motor_.set(gate_.apply(
       speedController_.update(encoder_.ticks(), now, proposal_), imuReady_));
-  if (static_cast<std::uint32_t>(now - lastControlLogMs_) <
-      kControlLogPeriodMs)
+  if (static_cast<std::uint32_t>(now - lastControlLogMs_) < kControlLogPeriodMs)
     return;
   lastControlLogMs_ = now;
   const auto ticks = encoder_.ticks();
@@ -464,9 +509,8 @@ void HQuestionApplication::updateControl(std::uint32_t now) noexcept {
   appendSigned(startupLog_, length,
                static_cast<std::int32_t>(speed.leftMetersPerSecond * 1000.0F));
   appendText(startupLog_, length, ",");
-  appendSigned(
-      startupLog_, length,
-      static_cast<std::int32_t>(speed.rightMetersPerSecond * 1000.0F));
+  appendSigned(startupLog_, length,
+               static_cast<std::int32_t>(speed.rightMetersPerSecond * 1000.0F));
   appendText(startupLog_, length, " REF=");
   appendSigned(startupLog_, length, proposal_.left);
   appendText(startupLog_, length, ",");
@@ -481,28 +525,26 @@ void HQuestionApplication::updateControl(std::uint32_t now) noexcept {
 
 void HQuestionApplication::updateUserLed(std::uint32_t now) noexcept {
   if (userLedOn_ && static_cast<std::uint32_t>(now - lastUserLedPulseMs_) >=
-                        kUserLedPulseMs) {
+                        VEHICLE_TUNING_USER_LED_PULSE_MS) {
     userLedOn_ = false;
     leds_.setUser(false);
   }
   if (!userLedOn_ && static_cast<std::uint32_t>(now - lastUserLedPulseMs_) >=
-                         kUserLedPeriodMs) {
+                         VEHICLE_TUNING_USER_LED_PERIOD_MS) {
     userLedOn_ = true;
     lastUserLedPulseMs_ = now;
     leds_.setUser(true);
   }
 }
 
-void HQuestionApplication::submitMenu(
-    const HRaceSnapshot &race) noexcept {
+void HQuestionApplication::submitMenu(const HRaceSnapshot &race) noexcept {
   (void)oled_.writeLine(0U, "H QUESTION MENU");
   (void)oled_.writeLine(1U, programText(race.program));
   (void)oled_.writeLine(2U, "LEFT RIGHT SELECT");
   (void)oled_.writeLine(3U, imuReady_ ? "CENTER START" : "IMU NOT READY");
 }
 
-void HQuestionApplication::submitRun(
-    const HRaceSnapshot &race) noexcept {
+void HQuestionApplication::submitRun(const HRaceSnapshot &race) noexcept {
   char row0[] = "RUN P0 S0/0 L0";
   char row1[] = "D:000/000 CM";
   char row2[] = "Y:000 TARGET";
@@ -532,7 +574,8 @@ void HQuestionApplication::submitRun(
 void HQuestionApplication::refreshOled(std::uint32_t now) noexcept {
   if (!oledReady_)
     return;
-  if (static_cast<std::uint32_t>(now - lastOledTextMs_) >= 100U) {
+  if (static_cast<std::uint32_t>(now - lastOledTextMs_) >=
+      H_QUESTION_OLED_TEXT_PERIOD_MS) {
     lastOledTextMs_ = now;
     const auto race = race_.snapshot();
     if (race.state == HRaceState::Menu)
@@ -540,7 +583,8 @@ void HQuestionApplication::refreshOled(std::uint32_t now) noexcept {
     else
       submitRun(race);
   }
-  if (static_cast<std::uint32_t>(now - lastOledServiceMs_) >= 2U) {
+  if (static_cast<std::uint32_t>(now - lastOledServiceMs_) >=
+      H_QUESTION_OLED_SERVICE_PERIOD_MS) {
     lastOledServiceMs_ = now;
     const car::Status status = oled_.service();
     if (status != car::Status::Ok && status != car::Status::Busy)
@@ -551,6 +595,7 @@ void HQuestionApplication::refreshOled(std::uint32_t now) noexcept {
 void HQuestionApplication::step() noexcept {
   const std::uint32_t now = bsp::millis();
   updateUserLed(now);
+  leds_.service(now);
   if (startupState_ != StartupState::Ready) {
     startupStep(now);
     if (oledReady_)
@@ -560,6 +605,8 @@ void HQuestionApplication::step() noexcept {
   updateImu();
   processKeys(now);
   updateControl(now);
+  leds_.setPattern(raceLedPattern(race_.snapshot()));
+  leds_.service(now);
   refreshOled(now);
 }
 

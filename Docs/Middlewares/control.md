@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `Pid` | target、measured、dt | 积分限幅、首样本无微分冲击的受限输出。 |
 | `DifferentialDrive` | `VehicleCommand` | 左右 `WheelCommand`。 |
-| `LineFollower` | `LineSample`、5 ms dt | 可运行时配置的 PID 巡线命令，不直接控制电机。 |
+| `LineFollower` | `LineSample`、实际 dt | PID 巡线及 Tracking/Holding/Searching/Lost 恢复状态，不直接控制电机。 |
 | `EncoderSpeedEstimator` | ticks、timestamp | 左右轮 m/s。 |
 | `WheelSpeedController` | 左右目标 mm/s、ticks、timestamp | 两路受限速度 PID，输出 `[-1000,1000]` PWM 命令。 |
 | `AttitudeFilter` | 原始 `ImuSample`、dt | 互补 / Kalman / Mahony AHRS roll/pitch/yaw。 |
@@ -19,7 +19,7 @@
 
 ## 姿态选择
 
-在 `Middlewares/attitude_backend_config.h` 设置：
+在 `Config/build_config.h` 设置：
 
 ```c
 #define ATTITUDE_CONFIG_BACKEND ATTITUDE_BACKEND_COMPLEMENTARY
@@ -42,6 +42,9 @@ Kd=0`、250 PWM 输出限幅；其中 1456 来自 28:1 减速比、13 线编码�
 
 `LineFollower` 默认使用 `kp=45, ki=0, kd=0, cruise=180`。串口命令只在循线
 未 enable 时生效，成功后 PID 状态会 reset，避免旧积分或微分状态污染新参数。
+丢线恢复参数集中在 `Config/vehicle_tuning.hpp`：保持 150 ms、最大恢复窗口
+600 ms、保持速度为巡航值 50%、搜索速度为巡航值 35%。无最近非零误差方向时
+立即 Lost；重捕获后自动回到 Tracking。
 
 | 命令 | 范围 | 响应 |
 | --- | --- | --- |

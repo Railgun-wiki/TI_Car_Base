@@ -20,7 +20,13 @@
 
 BMI270 初始化必须先 burst-write 8192 字节 vendor config blob（`ThirdParty/bmi270/bmi270_config_file.h`，逐字节不改）到 `INIT_DATA (0x5E)`，在 `INIT_CTRL (0x59)` 的 0/1 之间，再读 `INTERNAL_STATUS (0x21)` 校验非零。该写入由 BSP 的 `i2cWriteRegister` 分段填 FIFO 完整传输，驱动传 `timeoutMs=500`（400 kHz 下约 200 ms，BSP 默认 5 ms 不够）。默认量程 ±2 g（`kAccelSensitivity=16384` LSB/g）、±2000 dps（`kGyroSensitivity=16.4` LSB/(°/s)）——gyro 量程是 MPU6050 ±250 dps 的 8 倍，`AttitudeFilter` 参数实车可能需重标定。ODR 100 Hz 匹配 10 ms 轮询。数据寄存器小端 LSB-first（accel `0x0C`、gyro `0x12`，各 6 字节），与 MPU6050 大端布局不同。
 
-`BMI270_ONBOARD_FUSION` 宏（默认 0）切换 `poll()` 语义：未定义/0 时只填 `ax..gz`（g、deg/s），Euler 留 0，走 `ImuReader`+`AttitudeFilter`（与 Mpu6050 一致）；为 1 时 `poll()` 内置 Mahony（移植自参考工程，含退化输入保护）直接填 `rollDeg/pitchDeg/yawDeg`，绕过 `AttitudeFilter`，dt 假设 ~100 Hz data-ready。状态：已构建，待实机验证（CHIP_ID、config 接受、量程/ODR、轴向、I2C 上拉）。
+`Config/build_config.h` 中的 `BMI270_ONBOARD_FUSION` 宏（默认 0）切换
+`poll()` 语义：未定义/0 时只填 `ax..gz`（g、deg/s），Euler 留 0，走
+`ImuReader`+`AttitudeFilter`（与 Mpu6050 一致）；为 1 时 `poll()` 内置
+Mahony（移植自参考工程，含退化输入保护）直接填
+`rollDeg/pitchDeg/yawDeg`，绕过 `AttitudeFilter`，dt 假设 ~100 Hz
+data-ready。状态：已构建，待实机验证（CHIP_ID、config 接受、量程/ODR、
+轴向、I2C 上拉）。
 | `Keypad` | active-low 稳定按键状态 | polling + 20 ms 去抖；长按/按下沿逻辑在 Application。 |
 | `Led` / `ActiveBuzzer` | 不暴露 GPIO 极性 | 蜂鸣器是 active-low 有源器件。 |
 | `Ssd1306` | 128x64 的八行缓存文本与分段刷新 | I2C1 DMA 一次一包；调用方不得在 ISR 刷新。`service()` 帧缓冲已完全同步（无脏行）时返回 `Ok`（空闲），有待处理传输时返回 `Busy`，以便区分"空闲"与"传输中"。 |

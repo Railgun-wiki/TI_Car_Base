@@ -2,12 +2,24 @@
 #include "ti_msp_dl_config.h"
 namespace bsp {
 void setStatusLed(std::uint8_t index, bool on) noexcept {
-  GPIO_Regs *port =
-      index == 0U ? GPIO_LED_LED1_PORT
-                  : (index == 1U ? GPIO_LED_LED2_PORT : GPIO_LED_LED3_PORT);
-  const std::uint32_t pin =
-      index == 0U ? GPIO_LED_LED1_PIN
-                  : (index == 1U ? GPIO_LED_LED2_PIN : GPIO_LED_LED3_PIN);
+  GPIO_Regs *port = nullptr;
+  std::uint32_t pin = 0U;
+  switch (index) {
+  case 0U:
+    port = GPIO_LED_LED1_PORT;
+    pin = GPIO_LED_LED1_PIN;
+    break;
+  case 1U:
+    port = GPIO_LED_LED2_PORT;
+    pin = GPIO_LED_LED2_PIN;
+    break;
+  case 2U:
+    port = GPIO_LED_LED3_PORT;
+    pin = GPIO_LED_LED3_PIN;
+    break;
+  default:
+    return;
+  }
   if (on)
     DL_GPIO_clearPins(port, pin);
   else

@@ -74,10 +74,11 @@ void step() noexcept;
 ### `init()` 的实际顺序
 
 1. 调用 `motor_.stop()`，把 PWM 和方向置入安全停止状态；
-2. 点亮状态 LED1、鸣叫约 30 ms 作为上电提示；
+2. 三颗状态 LED 闪烁、鸣叫约 30 ms 作为上电提示；
 3. 按编译期 `ATTITUDE_CONFIG_BACKEND` 初始化 DMP 或原始 MPU6050；软件后端同时 `reset()` 姿态滤波器；
 4. 初始化 SSD1306；失败只令 `oledReady_ = false`，不会阻断主循环；
-5. LED2 显示 IMU 就绪状态，LED3 显示 OLED 就绪状态。
+5. 用三灯组合显示设备就绪数量：全熄表示均未就绪，一盏边灯亮表示一个设备
+   就绪，中间灯与一盏边灯亮表示两个设备均就绪；左右镜像组合语义相同。
 
 前提是 `bsp::init()` 已先完成 SysConfig、PWM、编码器和 SysTick 初始化。`init()` 内的 30 ms 忙等只发生在启动期，不能迁入周期路径。
 
@@ -85,10 +86,10 @@ void step() noexcept;
 
 | 条件/周期 | 动作 | 失败行为 |
 | --- | --- | --- |
-| 每 5 ms | 读取灰度，以固定 dt 执行巡线 PID 和差速混合 | 无命中时 PID reset 并发布零建议；灰度极性需实测。 |
+| 每 5 ms | 读取灰度，以实测 elapsed time 执行巡线 PID 和差速混合 | 无命中时依次进入 Holding、Searching、Lost；灰度极性和搜索方向需实测。 |
 | `consumeImuDataReady()` 为真 | 软件后端调 `ImuReader::step()`（内部 poll → dt → `AttitudeFilter::update`）；DMP 后端直接 `notifyDataReady`+`poll`；BMI270+`BMI270_ONBOARD_FUSION` 直接 `poll`（内置 Mahony） | 除 `Ok`、`Busy` 外，置 `imuReady_ = false`、停止电机并打开蜂鸣器。 |
 | CENTER 连按至少 500 ms | 解锁循线 Demo | 未解锁时 `SafetyGate` 始终输出零。 |
-| 解锁且 UP 按住 | 允许巡线轮端建议通过 `SafetyGate` | 松开 CENTER/UP 或丢线时立即写入零。 |
+| 解锁且 UP 按住 | 允许巡线轮端建议通过 `SafetyGate` | 松开 CENTER/UP 立即写零；持续丢线 600 ms 后停车，重捕获可自动恢复。 |
 | 每 500 ms | 翻转用户 LED | 仅表示 superloop 活着。 |
 | 每 50 ms | 格式化 VOFA+ telemetry，并更新第一行 OLED | UART ring 空间不足时丢弃完整帧；OLED 单次失败目前未清除 `oledReady_`。 |
 
@@ -136,12 +137,16 @@ right = clamp(linear + turn)
 
 ```cpp
 LineFollower(LineFollowerConfig config) noexcept;
-car::VehicleCommand update(const car::LineSample& sample, float dtSeconds) noexcept;
+LineFollowerResult update(const car::LineSample& sample, float dtSeconds) noexcept;
 bool configure(float kp, float ki, float kd, int16_t cruise) noexcept;
 ```
 
-检测到线时，以 `target=0`、`measured=sample.error` 和固定 5 ms dt 执行受限
-PID，输出 `{cruise, turn}`；丢线时 reset PID 并输出 `{0, 0}`。当前默认参数是
+`LineFollowerResult` 包含 `VehicleCommand command` 和
+`LineTrackingState {Tracking, Holding, Searching, Lost}`。检测到线时，以
+`target=0`、`measured=sample.error` 和调用方提供的实际 dt 执行受限 PID，输出
+`{cruise, turn}`。丢线前 150 ms 以 50% 巡航值保持最近转向，之后以 35%
+巡航值按最近非零误差方向搜索；总计 600 ms 后输出零。没有有效方向历史时不猜测，
+直接进入 Lost。重捕获和首次丢线都会 reset PID，避免历史积分或微分冲击。当前默认参数是
 `kp=45, ki=0, kd=0, cruise=180`。运行时配置范围为 kp 0..300、ki 0..30、
 kd 0..100、cruise 0..500；配置成功会 reset PID 状态。误差与转向符号仍必须
 通过传感器位序和电机方向实机确认。
@@ -237,7 +242,7 @@ Driver 层可依赖 BSP，但不向上泄漏 DriverLib 或 SysConfig 宏。
 | `MotorDriver::stop()` | 缓存清零并调用 `bsp::stopMotors()`；可重复调用。 | 上电、初始化失败、IMU 错误与显式停车均应调用。 |
 | `MotorDriver::command() const` | 返回最近一次已限幅命令。 | 不读取 PWM 寄存器，也不表示电机真实转速。 |
 | `ActiveBuzzer::set(bool)` | 代理至 `bsp::setBuzzer()`。 | 板上是有源、active-low 蜂鸣器，只支持开/关。 |
-| `Led::setStatus(uint8_t, bool)` | 代理三个状态 LED；索引 0/1/其他分别映射 LED1/LED2/LED3。 | 调用方应仅使用 0..2；越界目前会落到 LED3。 |
+| `Led::setPattern(LedPattern)` / `service(uint32_t)` | LED1/2/3 各自支持 `Off/On/Blink`；LED2 为中间灯，LED1/3 为镜像等价的边灯。 | `service()` 必须在 superloop 周期调用；Blink 半周期默认 250 ms。 |
 | `Led::setUser(bool)` | 控制独立用户 LED。 | 用于心跳。 |
 | `Keypad::pressed(Key) const` | 读取 active-low GPIO，按下返回 true。 | 当前没有软件消抖、边沿事件或长按管理；Application 处理 CENTER 长按。 |
 
@@ -392,7 +397,7 @@ extern "C" void GROUP1_IRQHandler(void);
 
 ## 7. 姿态后端编译选择
 
-在 `Middlewares/attitude_backend_config.h` 设置：
+在 `Config/build_config.h` 设置：
 
 ```c
 #define ATTITUDE_CONFIG_BACKEND ATTITUDE_BACKEND_COMPLEMENTARY
@@ -413,7 +418,8 @@ extern "C" void GROUP1_IRQHandler(void);
 以“自动巡线 + 速度闭环”为例，建议保持现有职责边界：
 
 1. 在 Application 的固定周期读取 `Encoder::ticks()`，用 `EncoderSpeedEstimator` 得到 `WheelSpeed`；
-2. 以固定 5 ms 调用 `LineFollower::update(lineSample_, 0.005F)`，并将结果交给 `DifferentialDrive::mix()`；
+2. 按实际 elapsed time 调用 `LineFollower::update()`，检查返回状态，并将
+   `result.command` 交给 `DifferentialDrive::mix()`；
 3. 左右轮各用一个 `Pid`，把目标/实测速度转换为 `WheelCommand`；
 4. 在完成所有安全判定后，通过 `SafetyGate::apply()`；
 5. 最后且只在 Application 中调用 `MotorDriver::set()`。
