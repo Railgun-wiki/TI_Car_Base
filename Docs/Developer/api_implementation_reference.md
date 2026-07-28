@@ -86,10 +86,10 @@ void step() noexcept;
 
 | 条件/周期 | 动作 | 失败行为 |
 | --- | --- | --- |
-| 每 5 ms | 读取灰度，以实测 elapsed time 执行巡线 PID 和差速混合 | 无命中时依次进入 Holding、Searching、Lost；灰度极性和搜索方向需实测。 |
+| 每 5 ms | 读取灰度，以实测 elapsed time 执行巡线 PID 和差速混合 | 无命中时依次进入 Predicting、Searching、Lost；单侧宽黑预判后的全白进入 Cornering；灰度极性和方向需实测。 |
 | `consumeImuDataReady()` 为真 | 软件后端调 `ImuReader::step()`（内部 poll → dt → `AttitudeFilter::update`）；DMP 后端直接 `notifyDataReady`+`poll`；BMI270+`BMI270_ONBOARD_FUSION` 直接 `poll`（内置 Mahony） | 除 `Ok`、`Busy` 外，置 `imuReady_ = false`、停止电机并打开蜂鸣器。 |
 | CENTER 连按至少 500 ms | 解锁循线 Demo | 未解锁时 `SafetyGate` 始终输出零。 |
-| 解锁且 UP 按住 | 允许巡线轮端建议通过 `SafetyGate` | 松开 CENTER/UP 立即写零；持续丢线 600 ms 后停车，重捕获可自动恢复。 |
+| 解锁且 UP 按住 | 允许巡线轮端建议通过 `SafetyGate` | 松开 CENTER/UP 立即写零；普通丢线约 300 ms 后停车，重捕获可自动恢复。 |
 | 每 500 ms | 翻转用户 LED | 仅表示 superloop 活着。 |
 | 每 50 ms | 格式化 VOFA+ telemetry，并更新第一行 OLED | UART ring 空间不足时丢弃完整帧；OLED 单次失败目前未清除 `oledReady_`。 |
 
@@ -142,14 +142,17 @@ bool configure(float kp, float ki, float kd, int16_t cruise) noexcept;
 ```
 
 `LineFollowerResult` 包含 `VehicleCommand command` 和
-`LineTrackingState {Tracking, Holding, Searching, Lost}`。检测到线时，以
-`target=0`、`measured=sample.error` 和调用方提供的实际 dt 执行受限 PID，输出
-`{cruise, turn}`。丢线前 150 ms 以 50% 巡航值保持最近转向，之后以 35%
-巡航值按最近非零误差方向搜索；总计 600 ms 后输出零。没有有效方向历史时不猜测，
-直接进入 Lost。重捕获和首次丢线都会 reset PID，避免历史积分或微分冲击。当前默认参数是
-`kp=45, ki=0, kd=0, cruise=180`。运行时配置范围为 kp 0..300、ki 0..30、
-kd 0..100、cruise 0..500；配置成功会 reset PID 状态。误差与转向符号仍必须
-通过传感器位序和电机方向实机确认。
+`LineTrackingState {Tracking, CornerArmed, Predicting, Searching, Cornering, Lost}`。
+检测到线时，以 `target=0`、`measured=sample.error` 和调用方提供的实际 dt 执行
+受限 PID，输出 `{cruise, turn}`。只对有效 `error` 做低通；全白不作为误差零值
+输入 PID。普通全白先进入约 50 ms 的 `Predicting`，再以 35% 巡航值按最近非零
+误差方向 `Searching`，总计约 300 ms 后输出零。单侧至少三路宽黑并持续约 15 ms
+会预判 `CornerArmed`；只有随后全白才进入单轮 `Cornering`。两侧宽黑、横线和
+`0xFF` 不选择方向。重捕获会 reset PID、以首个新误差初始化滤波器，并由转向变化率
+限制器接管，避免反向跳变。没有有效方向历史时不猜测，直接进入 Lost。当前默认参数是
+`kp=45, ki=0, kd=0, cruise=180`；运行时配置范围为 kp 0..300、ki 0..30、
+kd 0..100、cruise 0..500；配置成功会 reset 状态。误差与转向符号仍必须通过
+传感器位序和电机方向实机确认。
 
 ### `middleware::EncoderSpeedEstimator`
 

@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `Pid` | target、measured、dt | 积分限幅、首样本无微分冲击的受限输出。 |
 | `DifferentialDrive` | `VehicleCommand` | 左右 `WheelCommand`。 |
-| `LineFollower` | `LineSample`、实际 dt | PID 巡线及 Tracking/Holding/Searching/Lost 恢复状态，不直接控制电机。 |
+| `LineFollower` | `LineSample`、实际 dt | PID 巡线及 Tracking/CornerArmed/Predicting/Searching/Cornering/Lost 恢复状态，不直接控制电机。 |
 | `EncoderSpeedEstimator` | ticks、timestamp | 左右轮 m/s。 |
 | `WheelSpeedController` | 左右目标 mm/s、ticks、timestamp | 两路受限速度 PID，输出 `[-1000,1000]` PWM 命令。 |
 
@@ -46,9 +46,13 @@ Kd=0`、250 PWM 输出限幅；其中 1456 来自 28:1 减速比、13 线编码�
 
 `LineFollower` 默认使用 `kp=45, ki=0, kd=0, cruise=180`。串口命令只在循线
 未 enable 时生效，成功后 PID 状态会 reset，避免旧积分或微分状态污染新参数。
-丢线恢复参数集中在 `Config/vehicle_tuning.hpp`：保持 150 ms、最大恢复窗口
-600 ms、保持速度为巡航值 50%、搜索速度为巡航值 35%。无最近非零误差方向时
-立即 Lost；重捕获后自动回到 Tracking。
+丢线恢复参数集中在 `Config/vehicle_tuning.hpp`：短间隙预测 50 ms、普通搜索
+总窗口 300 ms、预测速度为巡航值 50%、搜索/直角弯速度为巡航值 35%。仅对
+`error` 做 α≈0.7 低通；`bits`/`detected` 不过滤。直角弯依赖全白前的单侧宽黑
+预判（约 15 ms 确认），全白后才进入强制单轮 `Cornering`。无最近非零误差方向时
+立即 Lost；全白期间不向 PID 输入虚假的零误差。重捕获首帧会重置 PID 并直接
+初始化滤波误差，转向命令再按 `VEHICLE_TUNING_LINE_TURN_SLEW_PER_SECOND`
+限速后回到 Tracking，避免跨侧重捕获时反向跳变。
 
 | 命令 | 范围 | 响应 |
 | --- | --- | --- |

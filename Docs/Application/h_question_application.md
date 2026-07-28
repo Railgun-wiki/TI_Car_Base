@@ -46,8 +46,9 @@ filter（可通过 `ATTITUDE_CONFIG_BACKEND` 切回 DMP 或 Kalman）。软件�
 `HQuestionProgram` 是 Application 内不依赖硬件的状态机。直线/对角段按编码器平均绝对 tick 计算距离，
 并以相对 yaw 做 heading PID；弧线段使用 `LineFollower`。每段超过目标距离 80% 后
 启用灰度辅助顶点判断：直线/对角需至少两路检测到黑线，弧线需全白，且提前触发需连续
-40 ms；目标距离为最终兜底。弧线在端点窗口之前丢线时，先保持最近转向 150 ms，
-再低速搜索；总丢线时间达到 600 ms 仍未找回则进入 `Fault`。P2 不使用丢线端点，
+40 ms；目标距离为最终兜底。弧线在端点窗口之前丢线时，先短时 `Predicting`
+（约 50 ms），再低速搜索；总丢线约 300 ms 仍未找回则进入 `Fault`。单侧宽黑
+预判后全白会进入 `Cornering`。P2 不使用丢线端点，
 所以持续丢线只会恢复或故障，不会提前完成 500 cm。
 
 H题基础调度为 5 ms。弧线与 P2 的灰度采样、`LineFollower` 和目标轮速建议每

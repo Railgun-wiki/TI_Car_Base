@@ -99,7 +99,8 @@ portability patch 仅限：添加 `EMPL_TARGET_MSPM0` 分支、Target 编译包�
 - 主循环以 200 Hz 读取灰度并执行巡线 PID、按 IMU data-ready 读取姿态、20 Hz
   输出 VOFA+ telemetry；OLED 为低优先级。
 - 循线 Demo：CENTER 连续按住 500 ms 后，同时按住 CENTER + UP 才运行；松手立即
-  停车。丢线先保持最近转向 150 ms，再搜索至总计 600 ms，仍未找回才停车；
+  停车。普通丢线先短时预测最近转向约 50 ms，再搜索至总计约 300 ms；直角弯须由
+  全白前的单侧宽黑预判确认，仍未找回才停车；
   按键保持时重捕获会自动恢复。
 - 初始化失败、DMP/I2C/FIFO 错误均调用 `MotorDriver::stop()`。软件滤波或巡线算法
   的输出必须经过 `SafetyGate` 才能驱动电机。

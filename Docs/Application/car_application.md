@@ -45,12 +45,14 @@
 
 - CENTER 连续按住 500 ms 后 armed，继续同时按住 CENTER + UP 才运行；
 - 松开 CENTER 或 UP 时立即发布零轮速命令；
-- 8 路灰度均未检测到线时，`LineFollower` 先保持最近转向 150 ms，再按最近
-  误差方向低速搜索；总丢线时间达到 600 ms 后发布零命令。按键仍保持使能时，
+- 8 路灰度均未检测到线时，`LineFollower` 先短时 `Predicting`（约 50 ms 保持
+  最近转向趋势），再按最近误差方向低速 `Searching`；总丢线约 300 ms 后
+  发布零命令。单侧宽黑预判后的全白进入 `Cornering`。按键仍保持使能时，
   重新检测到线会自动恢复 Tracking；
-- OLED 第三行显示 `TRACK/HOLD/SEARCH/LOST`，便于实车确认恢复阶段；
+- OLED 第三行显示 `TRACK/CORNER?/PREDICT/SEARCH/CORNER/LOST`；
 - 三灯状态：未使能=`两边亮/中间熄`，Tracking=`全亮`，
-  Holding=`边灯亮/中间闪`，Searching=`中间亮/边灯闪`，Lost=`仅中间闪`；
+  Predicting=`边灯亮/中间闪`，Searching=`中间亮/边灯闪`，
+  CornerArmed=`边+中闪`，Cornering=`一边亮/对边闪`，Lost=`仅中间闪`；
   左右边灯的镜像组合含义相同；
 - 默认巡航命令为 180，PID 为 `45/0/0`，均由 `LINE_FOLLOW_*` 宏配置；这些参数只完成编译验证，
   必须根据实际车速、赛道曲率和传感器高度进行实车标定；
@@ -88,5 +90,5 @@ UART 解析字节数；两者都不应放入 ISR。
   `APP_ACTIVE=0` 完成 Debug 全量构建；0 errors，唯一 warning 为 linker 对项目
   默认 `0x800` heap 的提示。Flash 使用 27,288 B，SRAM 使用 3,139 B；
 - 待实机验证：灰度高/低电平极性、左右传感器顺序、电机正方向、急弯差速、
-  丢线保持/搜索方向、600 ms 最大盲行距离、自动重捕获、CENTER + UP 松手停车
+  短期预测/搜索方向、约 300 ms 最大盲行距离、直角弯预判、自动重捕获、CENTER + UP 松手停车
   时延、OLED DMA 刷新和按键去抖。

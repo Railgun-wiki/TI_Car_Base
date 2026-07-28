@@ -9,10 +9,14 @@ const char *lineStateText(middleware::LineTrackingState state) noexcept {
   switch (state) {
   case middleware::LineTrackingState::Tracking:
     return "LINE:TRACK";
-  case middleware::LineTrackingState::Holding:
-    return "LINE:HOLD";
+  case middleware::LineTrackingState::CornerArmed:
+    return "LINE:CORNER?";
+  case middleware::LineTrackingState::Predicting:
+    return "LINE:PREDICT";
   case middleware::LineTrackingState::Searching:
     return "LINE:SEARCH";
+  case middleware::LineTrackingState::Cornering:
+    return "LINE:CORNER";
   case middleware::LineTrackingState::Lost:
     return "LINE:LOST";
   }
@@ -26,10 +30,14 @@ lineLedPattern(bool enabled, middleware::LineTrackingState state) noexcept {
   switch (state) {
   case middleware::LineTrackingState::Tracking:
     return config::status_led::kLineTracking;
-  case middleware::LineTrackingState::Holding:
-    return config::status_led::kLineHolding;
+  case middleware::LineTrackingState::CornerArmed:
+    return config::status_led::kLineCornerArmed;
+  case middleware::LineTrackingState::Predicting:
+    return config::status_led::kLinePredicting;
   case middleware::LineTrackingState::Searching:
     return config::status_led::kLineSearching;
+  case middleware::LineTrackingState::Cornering:
+    return config::status_led::kLineCornering;
   case middleware::LineTrackingState::Lost:
     return config::status_led::kLineLost;
   }

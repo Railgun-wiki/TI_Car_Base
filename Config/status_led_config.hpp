@@ -17,8 +17,13 @@ constexpr LedPattern kDevicesTwo{LedMode::On, LedMode::On, LedMode::Off};
 
 constexpr LedPattern kLineDisabled{LedMode::On, LedMode::Off, LedMode::On};
 constexpr LedPattern kLineTracking{LedMode::On, LedMode::On, LedMode::On};
-constexpr LedPattern kLineHolding{LedMode::On, LedMode::Blink, LedMode::Off};
+// Predicting reuses the former Holding pattern (side on / center blink).
+constexpr LedPattern kLinePredicting{LedMode::On, LedMode::Blink, LedMode::Off};
+constexpr LedPattern kLineHolding = kLinePredicting; // compat alias
+constexpr LedPattern kLineCornerArmed{LedMode::Blink, LedMode::Blink,
+                                      LedMode::Off};
 constexpr LedPattern kLineSearching{LedMode::Blink, LedMode::On, LedMode::Off};
+constexpr LedPattern kLineCornering{LedMode::On, LedMode::Off, LedMode::Blink};
 constexpr LedPattern kLineLost{LedMode::Off, LedMode::Blink, LedMode::Off};
 
 constexpr LedPattern kRaceMenu{LedMode::On, LedMode::On, LedMode::Off};

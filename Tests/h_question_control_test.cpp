@@ -142,10 +142,15 @@ void testLineSensorPreservesRawBits() {
 
 void testStatusLedConfiguration() {
   using drivers::LedMode;
-  const auto holding = config::status_led::kLineHolding;
-  assert(holding.led1 == LedMode::On);
-  assert(holding.led2 == LedMode::Blink);
-  assert(holding.led3 == LedMode::Off);
+  const auto predicting = config::status_led::kLinePredicting;
+  assert(predicting.led1 == LedMode::On);
+  assert(predicting.led2 == LedMode::Blink);
+  assert(predicting.led3 == LedMode::Off);
+
+  const auto cornerArmed = config::status_led::kLineCornerArmed;
+  assert(cornerArmed.led1 == LedMode::Blink);
+  assert(cornerArmed.led2 == LedMode::Blink);
+  assert(cornerArmed.led3 == LedMode::Off);
 
   const auto finished = config::status_led::kRaceFinished;
   assert(finished.led1 == LedMode::On);
@@ -198,27 +203,49 @@ void testForwardPwmRiseLimit() {
   assert(controller.update({}, 100U, target).left == 4);
 }
 
+middleware::LineFollowerConfig makeLineConfig() noexcept {
+  return {30.0F,
+          0.0F,
+          0.0F,
+          100,
+          50U,
+          300U,
+          0.50F,
+          0.35F,
+          0.70F,
+          4000.0F,
+          200U,
+          15U,
+          100U,
+          300U,
+          0.35F,
+          3U,
+          2U,
+          10U};
+}
+
 void testLineFollowerRecoveryStates() {
-  middleware::LineFollower follower{
-      {30.0F, 0.0F, 0.0F, 100, 150U, 600U, 0.50F, 0.35F}};
+  middleware::LineFollower follower{makeLineConfig()};
   const auto tracking = follower.update({0x20U, 2, true, 0x20U}, 0.005F);
   assert(tracking.state == middleware::LineTrackingState::Tracking);
   assert(tracking.command.linear == 100);
   assert(tracking.command.angular < 0);
 
-  const auto holding = follower.update({}, 0.005F);
-  assert(holding.state == middleware::LineTrackingState::Holding);
-  assert(holding.command.linear == 50);
-  assert(holding.command.angular == -50);
+  const auto predicting = follower.update({}, 0.005F);
+  assert(predicting.state == middleware::LineTrackingState::Predicting);
+  assert(predicting.command.linear == 50);
+  assert(predicting.command.angular <= 0);
 
-  const auto stillHolding = follower.update({}, 0.144F);
-  assert(stillHolding.state == middleware::LineTrackingState::Holding);
+  const auto stillPredicting = follower.update({}, 0.044F);
+  assert(stillPredicting.state == middleware::LineTrackingState::Predicting);
   const auto searching = follower.update({}, 0.002F);
   assert(searching.state == middleware::LineTrackingState::Searching);
   assert(searching.command.linear == 35);
-  assert(searching.command.angular == -35);
+  // Steering changes are slew-limited when Predicting hands control to search.
+  assert(searching.command.angular < 0);
+  assert(searching.command.angular >= -50);
 
-  const auto lost = follower.update({}, 0.450F);
+  const auto lost = follower.update({}, 0.250F);
   assert(lost.state == middleware::LineTrackingState::Lost);
   assert(lost.command.linear == 0 && lost.command.angular == 0);
 
@@ -229,8 +256,7 @@ void testLineFollowerRecoveryStates() {
 }
 
 void testLineFollowerDoesNotGuessDirection() {
-  middleware::LineFollower follower{
-      {30.0F, 0.0F, 0.0F, 100, 150U, 600U, 0.50F, 0.35F}};
+  middleware::LineFollower follower{makeLineConfig()};
   const auto noHistory = follower.update({}, 0.005F);
   assert(noHistory.state == middleware::LineTrackingState::Lost);
   assert(noHistory.command.linear == 0 && noHistory.command.angular == 0);
@@ -241,9 +267,64 @@ void testLineFollowerDoesNotGuessDirection() {
 
   (void)follower.update({0x20U, 2, true, 0x20U}, 0.005F);
   const auto invalidLargeDt = follower.update({}, 1000.0F);
-  assert(invalidLargeDt.state == middleware::LineTrackingState::Holding);
+  assert(invalidLargeDt.state == middleware::LineTrackingState::Predicting);
   const auto invalidNegativeDt = follower.update({}, -1.0F);
-  assert(invalidNegativeDt.state == middleware::LineTrackingState::Holding);
+  assert(invalidNegativeDt.state == middleware::LineTrackingState::Predicting);
+}
+
+void testLineFollowerCornerArmAndTurn() {
+  middleware::LineFollower follower{makeLineConfig()};
+  // Positive-side wide black 0xE0 (bits 5,6,7) held for >=15 ms.
+  for (int i = 0; i < 4; ++i) {
+    const auto armed = follower.update({0xE0U, 5, true, 0xE0U}, 0.005F);
+    if (i >= 2) {
+      assert(armed.state == middleware::LineTrackingState::CornerArmed);
+      assert(armed.command.linear == 35);
+    }
+  }
+  const auto cornering = follower.update({}, 0.005F);
+  assert(cornering.state == middleware::LineTrackingState::Cornering);
+  assert(cornering.command.linear == 35);
+  assert(cornering.command.angular == -35);
+
+  // Center ordinary line reacquires promptly.
+  const auto back = follower.update({0x18U, 0, true, 0x18U}, 0.005F);
+  assert(back.state == middleware::LineTrackingState::Tracking);
+}
+
+void testLineFollowerRejectsAmbiguousWideBlack() {
+  middleware::LineFollower follower{makeLineConfig()};
+  (void)follower.update({0x18U, 0, true, 0x18U}, 0.005F);
+  for (int i = 0; i < 5; ++i) {
+    const auto cross = follower.update({0xFFU, 0, true, 0xFFU}, 0.005F);
+    assert(cross.state == middleware::LineTrackingState::Tracking);
+  }
+  // Full white after ambiguous pattern with only zero error history → Lost.
+  const auto lost = follower.update({}, 0.005F);
+  assert(lost.state == middleware::LineTrackingState::Lost);
+}
+
+void testLineFollowerSingleFrameWideBlackIsNotCorner() {
+  middleware::LineFollower follower{makeLineConfig()};
+  (void)follower.update({0x20U, 2, true, 0x20U}, 0.005F);
+  // One 5 ms frame of wide black is below the 15 ms confirm window.
+  const auto oneFrame = follower.update({0xE0U, 5, true, 0xE0U}, 0.005F);
+  assert(oneFrame.state == middleware::LineTrackingState::Tracking);
+  const auto predicting = follower.update({}, 0.005F);
+  assert(predicting.state == middleware::LineTrackingState::Predicting);
+}
+
+void testLineFollowerReacquireDoesNotReverseSteeringInOneTick() {
+  middleware::LineFollower follower{makeLineConfig()};
+  (void)follower.update({0x20U, 2, true, 0x20U}, 0.005F);
+  const auto predicting = follower.update({}, 0.005F);
+  assert(predicting.command.angular < 0);
+
+  // Reacquire on the opposite side.  The filter must start from this sample,
+  // but the command slew guard must prevent an immediate steering reversal.
+  const auto reacquired = follower.update({0x08U, -2, true, 0x08U}, 0.005F);
+  assert(reacquired.state == middleware::LineTrackingState::Tracking);
+  assert(reacquired.command.angular <= 0);
 }
 
 } // namespace
@@ -262,6 +343,10 @@ int main() {
   testStatusLedConfiguration();
   testLineFollowerRecoveryStates();
   testLineFollowerDoesNotGuessDirection();
+  testLineFollowerCornerArmAndTurn();
+  testLineFollowerRejectsAmbiguousWideBlack();
+  testLineFollowerSingleFrameWideBlackIsNotCorner();
+  testLineFollowerReacquireDoesNotReverseSteeringInOneTick();
 }
 
 #endif
