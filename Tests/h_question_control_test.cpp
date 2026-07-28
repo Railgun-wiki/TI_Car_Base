@@ -5,8 +5,17 @@
 #include "Application/h_question_program.hpp"
 #include "Config/status_led_config.hpp"
 #include "Config/vehicle_tuning.hpp"
+#include "Drivers/line_sensor_array.hpp"
 #include "Middlewares/line_follower.hpp"
 #include "Middlewares/wheel_speed_controller.hpp"
+
+namespace {
+std::uint8_t gHostLineBits = 0U;
+}
+
+namespace bsp {
+std::uint8_t readLineBits() noexcept { return gHostLineBits; }
+} // namespace bsp
 
 namespace {
 
@@ -17,7 +26,7 @@ void testEndpointConfirmation() {
   assert(race.snapshot().state == app::HRaceState::Running);
 
   const car::EncoderTicks armedTicks{8000, 8000};
-  const car::LineSample checkpointLine{0x03U, 0, true};
+  const car::LineSample checkpointLine{0x03U, 0, true, 0x03U};
   (void)race.update(3005U, armedTicks, 0.0F, checkpointLine);
   assert(race.snapshot().state == app::HRaceState::Running);
   (void)race.update(3044U, armedTicks, 0.0F, checkpointLine);
@@ -94,7 +103,7 @@ void testEndpointConfirmationHandlesTimeWrap() {
   race.start(kStart, {}, 0.0F);
   (void)race.update(kStart, {}, 0.0F, {});
   const car::EncoderTicks armedTicks{8000, 8000};
-  const car::LineSample checkpointLine{0x03U, 0, true};
+  const car::LineSample checkpointLine{0x03U, 0, true, 0x03U};
   (void)race.update(0xFFFFFFEBU, armedTicks, 0.0F, checkpointLine);
   assert(race.snapshot().state == app::HRaceState::Running);
   (void)race.update(20U, armedTicks, 0.0F, checkpointLine);
@@ -108,6 +117,27 @@ void testCentralTuningConfig() {
   assert(race.quadratureMultiplier ==
          VEHICLE_TUNING_ENCODER_QUADRATURE_MULTIPLIER);
   assert(race.p2DistanceCm == H_QUESTION_P2_DISTANCE_CM);
+  assert(VEHICLE_TUNING_LINE_SENSOR_LINE_IS_HIGH == 1);
+  assert(H_QUESTION_ARC_SPEED_MM_PER_SECOND == 200);
+  assert(H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND == 250);
+  assert(H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND == 100);
+  assert(H_QUESTION_SPEED_KP == 2.5F);
+}
+
+void testLineSensorPreservesRawBits() {
+  drivers::LineSensorArray sensor{};
+  gHostLineBits = 0x81U;
+  const car::LineSample centered = sensor.read();
+  assert(centered.rawBits == 0x81U);
+  assert(centered.bits == 0x81U);
+  assert(centered.detected);
+  assert(centered.error == 0);
+
+  gHostLineBits = 0U;
+  const car::LineSample lost = sensor.read();
+  assert(lost.rawBits == 0U);
+  assert(lost.bits == 0U);
+  assert(!lost.detected);
 }
 
 void testStatusLedConfiguration() {
@@ -171,7 +201,7 @@ void testForwardPwmRiseLimit() {
 void testLineFollowerRecoveryStates() {
   middleware::LineFollower follower{
       {30.0F, 0.0F, 0.0F, 100, 150U, 600U, 0.50F, 0.35F}};
-  const auto tracking = follower.update({0x20U, 2, true}, 0.005F);
+  const auto tracking = follower.update({0x20U, 2, true, 0x20U}, 0.005F);
   assert(tracking.state == middleware::LineTrackingState::Tracking);
   assert(tracking.command.linear == 100);
   assert(tracking.command.angular < 0);
@@ -192,7 +222,7 @@ void testLineFollowerRecoveryStates() {
   assert(lost.state == middleware::LineTrackingState::Lost);
   assert(lost.command.linear == 0 && lost.command.angular == 0);
 
-  const auto reacquired = follower.update({0x08U, -1, true}, 0.005F);
+  const auto reacquired = follower.update({0x08U, -1, true, 0x08U}, 0.005F);
   assert(reacquired.state == middleware::LineTrackingState::Tracking);
   assert(reacquired.command.linear == 100);
   assert(reacquired.command.angular > 0);
@@ -205,11 +235,11 @@ void testLineFollowerDoesNotGuessDirection() {
   assert(noHistory.state == middleware::LineTrackingState::Lost);
   assert(noHistory.command.linear == 0 && noHistory.command.angular == 0);
 
-  (void)follower.update({0x18U, 0, true}, 0.005F);
+  (void)follower.update({0x18U, 0, true, 0x18U}, 0.005F);
   const auto centeredLoss = follower.update({}, 0.005F);
   assert(centeredLoss.state == middleware::LineTrackingState::Lost);
 
-  (void)follower.update({0x20U, 2, true}, 0.005F);
+  (void)follower.update({0x20U, 2, true, 0x20U}, 0.005F);
   const auto invalidLargeDt = follower.update({}, 1000.0F);
   assert(invalidLargeDt.state == middleware::LineTrackingState::Holding);
   const auto invalidNegativeDt = follower.update({}, -1.0F);
@@ -228,6 +258,7 @@ int main() {
   testForwardTargetNeverReverses();
   testForwardPwmRiseLimit();
   testCentralTuningConfig();
+  testLineSensorPreservesRawBits();
   testStatusLedConfiguration();
   testLineFollowerRecoveryStates();
   testLineFollowerDoesNotGuessDirection();

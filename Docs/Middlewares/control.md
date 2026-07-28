@@ -9,6 +9,10 @@
 | `LineFollower` | `LineSample`、实际 dt | PID 巡线及 Tracking/Holding/Searching/Lost 恢复状态，不直接控制电机。 |
 | `EncoderSpeedEstimator` | ticks、timestamp | 左右轮 m/s。 |
 | `WheelSpeedController` | 左右目标 mm/s、ticks、timestamp | 两路受限速度 PID，输出 `[-1000,1000]` PWM 命令。 |
+
+H题弧线/P2 的 `LineFollower` 以 5 ms 实际 elapsed time 更新，速度环仍为 50 ms；
+直线 heading PID 为 100 ms 外环。这样优先恢复灰度转向响应，同时不改变编码器
+测速窗口和 IMU heading 环稳定性。
 | `AttitudeFilter` | 原始 `ImuSample`、dt | 互补 / Kalman / Mahony AHRS roll/pitch/yaw。 |
 | `ImuReader` | `ImuBackend&`、`AttitudeFilter&`、`nowMs` | 封装 poll → dt → filter，让软件滤波路径不命名具体芯片。 |
 | `SafetyGate` | 命令、enabled | 默认输出零。 |

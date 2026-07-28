@@ -23,7 +23,7 @@
 #define VEHICLE_TUNING_ENCODER_RIGHT_DIRECTION -1
 #endif
 #ifndef VEHICLE_TUNING_LINE_SENSOR_LINE_IS_HIGH
-#define VEHICLE_TUNING_LINE_SENSOR_LINE_IS_HIGH 0
+#define VEHICLE_TUNING_LINE_SENSOR_LINE_IS_HIGH 1
 #endif
 #ifndef VEHICLE_TUNING_LINE_HOLD_MS
 #define VEHICLE_TUNING_LINE_HOLD_MS 150U
@@ -125,13 +125,13 @@
 #endif
 
 #ifndef H_QUESTION_ARC_SPEED_MM_PER_SECOND
-#define H_QUESTION_ARC_SPEED_MM_PER_SECOND 100
+#define H_QUESTION_ARC_SPEED_MM_PER_SECOND 200
 #endif
 #ifndef H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND
-#define H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND 200
+#define H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND 250
 #endif
 #ifndef H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND
-#define H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND 80
+#define H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND 100
 #endif
 #ifndef H_QUESTION_TRACK_WIDTH_METERS
 #define H_QUESTION_TRACK_WIDTH_METERS 0.15F
@@ -158,7 +158,7 @@
 #define H_QUESTION_HEADING_INTEGRAL_LIMIT 50.0F
 #endif
 #ifndef H_QUESTION_SPEED_KP
-#define H_QUESTION_SPEED_KP 2.0F
+#define H_QUESTION_SPEED_KP 2.5F
 #endif
 #ifndef H_QUESTION_SPEED_KI
 #define H_QUESTION_SPEED_KI 1.0F
@@ -249,6 +249,27 @@
     H_QUESTION_OLED_SERVICE_PERIOD_MS == 0
 #error "H_QUESTION OLED periods must be greater than zero"
 #endif
+#if H_QUESTION_ARC_SPEED_MM_PER_SECOND <= 0 ||                                 \
+    H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND <= 0
+#error "H_QUESTION target speeds must be positive"
+#endif
+#if H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND < 0 ||                        \
+    H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND >                             \
+        H_QUESTION_ARC_SPEED_MM_PER_SECOND ||                                  \
+    H_QUESTION_MINIMUM_WHEEL_SPEED_MM_PER_SECOND >                             \
+        H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND
+#error "H_QUESTION minimum wheel speed must not exceed target speeds"
+#endif
+#if H_QUESTION_CONTROL_PERIOD_MS == 0 ||                                       \
+    H_QUESTION_OUTER_CONTROL_PERIOD_MS == 0 ||                                 \
+    H_QUESTION_SPEED_SAMPLE_PERIOD_MS == 0 ||                                  \
+    H_QUESTION_CONTROL_LOG_PERIOD_MS == 0
+#error "H_QUESTION control periods must be greater than zero"
+#endif
+#if H_QUESTION_OUTER_CONTROL_PERIOD_MS % H_QUESTION_CONTROL_PERIOD_MS != 0 ||  \
+    H_QUESTION_SPEED_SAMPLE_PERIOD_MS % H_QUESTION_CONTROL_PERIOD_MS != 0
+#error "H_QUESTION outer and speed periods must be control-period multiples"
+#endif
 #if H_QUESTION_AUTO_START_PROGRAM < 0 || H_QUESTION_AUTO_START_PROGRAM > 4
 #error "H_QUESTION_AUTO_START_PROGRAM must be in the range 0..4"
 #endif
@@ -267,3 +288,5 @@ static_assert(LINE_FOLLOW_KD >= 0.0F && LINE_FOLLOW_KD <= 100.0F,
               "LINE_FOLLOW_KD must be in [0, 100]");
 static_assert(LINE_FOLLOW_TRACK_WIDTH_METERS > 0.0F,
               "LINE_FOLLOW_TRACK_WIDTH_METERS must be positive");
+static_assert(H_QUESTION_SPEED_KP >= 0.0F && H_QUESTION_SPEED_KP <= 20.0F,
+              "H_QUESTION_SPEED_KP must be in [0, 20]");

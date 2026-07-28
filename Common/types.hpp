@@ -24,9 +24,12 @@ struct VehicleCommand final {
   std::int16_t angular;
 };
 struct LineSample final {
+  // bits is normalized so a set bit always means "sensor is on the line".
+  // rawBits preserves the electrical GPIO sample for commissioning.
   std::uint8_t bits;
   std::int16_t error;
   bool detected;
+  std::uint8_t rawBits;
 };
 struct EncoderTicks final {
   std::int32_t left;

@@ -4,9 +4,13 @@
 | --- | --- | --- |
 | `MotorDriver` | 有符号 `WheelCommand`、可重复 `stop()` | 指令限幅至 ±1000；方向安全在 BSP。 |
 | `Encoder` | 读取/复位 `EncoderTicks` | 不在 Driver 内计算速度。 |
-| `LineSensorArray` | 8-bit `LineSample`、加权 error | 灰度极性必须实机确认。 |
+| `LineSensorArray` | 归一化/原始 8-bit `LineSample`、加权 error | 灰度极性必须实机确认。 |
 
-`LineSensorArray` 的 `read()` 把 `bsp::readLineBits()` 的原始 8 bit 归一为“置位 = 压在线上”，再做 `-7..+7` 加权求平均。灰度模块指示 LED 默认“贴白亮、贴黑灭”，但 OUT 引脚电平是否与指示灯同相取决于传感器板；必须在 `Config/vehicle_tuning.hpp` 按 `VEHICLE_TUNING_LINE_SENSOR_LINE_IS_HIGH` 实机确认。翻转极性只改该宏，不改正文权重逻辑。
+`LineSensorArray` 的 `read()` 保留 GPIO 原值为 `rawBits`，并把 `bits` 归一为
+“置位 = 压在线上”，再做 `-7..+7` 加权求平均。当前目标分支的实测起始值为
+`VEHICLE_TUNING_LINE_SENSOR_LINE_IS_HIGH=1`。灰度模块指示 LED 与 OUT 是否同相
+仍取决于传感器板；实机不符时只翻转该宏，不改权重逻辑。H题 OLED 和串口会同时
+显示 `bits/rawBits/error` 以辅助判断。
 
 ## `ImuBackend` 接口
 

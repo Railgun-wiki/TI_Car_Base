@@ -40,7 +40,7 @@ line-follow/heading speed targets -> WheelSpeedController -> SafetyGate
 | --- | --- | --- |
 | `WheelCommand` | `left`, `right` | 归一化轮端命令，合法范围 `-1000..1000`；正负对应方向，具体正向须实机确认。 |
 | `VehicleCommand` | `linear`, `angular` | 车辆级建议量；当前 `DifferentialDrive` 以归一化整数混合，不是 SI 速度/角速度。 |
-| `LineSample` | `bits`, `error`, `detected` | 8 个逻辑灰度位、加权横向误差、是否至少命中一个传感器。位极性和 C1..C8 空间顺序须实机确认。 |
+| `LineSample` | `bits`, `error`, `detected`, `rawBits` | `bits` 为“置位=在线”的归一化灰度，`rawBits` 为 GPIO 原值；另含加权横向误差和命中标志。位极性和 C1..C8 空间顺序须实机确认。 |
 | `EncoderTicks` | `left`, `right` | 软件正交解码的有符号累计计数；`int32_t` 长时运行可能回绕。 |
 | `ImuSample` | `a*`, `g*`, `roll/pitch/yawDeg`, `timestampMs` | 加速度为 g，角速度为 deg/s，姿态为 degree，时间戳为 ms。 |
 | `Key` | `Up/Left/Down/Right/Center/None` | 五向键的逻辑键值。 |

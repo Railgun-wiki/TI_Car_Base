@@ -47,7 +47,7 @@ W25Q128 的 PB6..PB9、板载 PB21 key 和 PA18 BSL 不纳入本固件，原因�
 | --- | --- |
 | `WheelCommand` | 左/右轮归一化指令，范围 -1000..1000。 |
 | `VehicleCommand` | 线速度建议与转向建议；由运动学转为 `WheelCommand`。 |
-| `LineSample` | 八位逻辑灰度、加权误差、是否检测到线。 |
+| `LineSample` | 八位归一化灰度、GPIO 原始灰度、加权误差、是否检测到线。 |
 | `EncoderTicks` | ISR 维护的有符号软件正交计数。 |
 | `ImuSample` | accel 为 g、gyro 为 deg/s、姿态为 degree、timestamp 为 ms。 |
 | `Status` | 非异常错误路径；调用者必须处理非 `Ok`。 |

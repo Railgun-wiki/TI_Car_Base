@@ -60,6 +60,19 @@ void textNumber(char *text, std::uint8_t offset, std::uint16_t value) noexcept {
   text[offset + 2U] = static_cast<char>('0' + value % 10U);
 }
 
+void textHexByte(char *text, std::uint8_t offset, std::uint8_t value) noexcept {
+  constexpr char kDigits[] = "0123456789ABCDEF";
+  text[offset] = kDigits[(value >> 4U) & 0x0FU];
+  text[offset + 1U] = kDigits[value & 0x0FU];
+}
+
+void textLineError(char *text, std::uint8_t offset,
+                   std::int16_t value) noexcept {
+  const std::int16_t magnitude = value < 0 ? -value : value;
+  text[offset] = value < 0 ? '-' : '+';
+  text[offset + 1U] = static_cast<char>('0' + magnitude);
+}
+
 const char *programText(HProgram program) noexcept {
   switch (program) {
   case HProgram::Requirement1:
@@ -453,40 +466,37 @@ void HQuestionApplication::updateControl(std::uint32_t now) noexcept {
     return;
   }
 
-  if (static_cast<std::uint32_t>(now - lastOuterControlMs_) >=
-      kOuterControlPeriodMs) {
-    lastOuterControlMs_ = now;
-    car::VehicleCommand command{};
-    if (race.segmentType == HSegmentType::Arc) {
-      const std::uint32_t elapsedMs =
-          lastLineFollowerMs_ == 0U
-              ? kOuterControlPeriodMs
-              : static_cast<std::uint32_t>(now - lastLineFollowerMs_);
-      lastLineFollowerMs_ = now;
-      const auto result = lineFollower_.update(
-          lineSample_, static_cast<float>(elapsedMs) / 1000.0F);
-      lineTrackingState_ = result.state;
-      command = result.command;
-      if (result.state == middleware::LineTrackingState::Lost) {
-        race_.fail();
-        proposal_ = {};
-        motor_.stop();
-        speedController_.reset();
-        return;
-      }
-    } else {
-      lastLineFollowerMs_ = 0U;
+  if (race.segmentType == HSegmentType::Arc) {
+    const std::uint32_t elapsedMs =
+        lastLineFollowerMs_ == 0U
+            ? kControlPeriodMs
+            : static_cast<std::uint32_t>(now - lastLineFollowerMs_);
+    lastLineFollowerMs_ = now;
+    const auto result = lineFollower_.update(
+        lineSample_, static_cast<float>(elapsedMs) / 1000.0F);
+    lineTrackingState_ = result.state;
+    proposal_ = drive_.mix(result.command);
+    if (result.state == middleware::LineTrackingState::Tracking) {
+      constrainForwardTarget(proposal_.left);
+      constrainForwardTarget(proposal_.right);
+    }
+    if (result.state == middleware::LineTrackingState::Lost) {
+      race_.fail();
+      proposal_ = {};
+      motor_.stop();
+      speedController_.reset();
+      return;
+    }
+  } else {
+    lastLineFollowerMs_ = 0U;
+    if (static_cast<std::uint32_t>(now - lastOuterControlMs_) >=
+        kOuterControlPeriodMs) {
+      lastOuterControlMs_ = now;
       const float turn = headingPid_.update(
           race.targetYawDeg, imuSample_.yawDeg,
           static_cast<float>(kOuterControlPeriodMs) / 1000.0F);
-      command = {H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND,
-                 static_cast<std::int16_t>(turn)};
-    }
-    proposal_ = drive_.mix(command);
-    const bool applyMinimum =
-        race.segmentType != HSegmentType::Arc ||
-        lineTrackingState_ == middleware::LineTrackingState::Tracking;
-    if (applyMinimum) {
+      proposal_ = drive_.mix({H_QUESTION_STRAIGHT_SPEED_MM_PER_SECOND,
+                              static_cast<std::int16_t>(turn)});
       constrainForwardTarget(proposal_.left);
       constrainForwardTarget(proposal_.right);
     }
@@ -515,6 +525,12 @@ void HQuestionApplication::updateControl(std::uint32_t now) noexcept {
   appendSigned(startupLog_, length, proposal_.left);
   appendText(startupLog_, length, ",");
   appendSigned(startupLog_, length, proposal_.right);
+  appendText(startupLog_, length, " LINE=");
+  appendHex(startupLog_, length, lineSample_.bits);
+  startupLog_[length++] = '/';
+  appendHex(startupLog_, length, lineSample_.rawBits);
+  appendText(startupLog_, length, " E=");
+  appendSigned(startupLog_, length, lineSample_.error);
   appendText(startupLog_, length, " PWM=");
   appendSigned(startupLog_, length, pwm.left);
   appendText(startupLog_, length, ",");
@@ -547,7 +563,7 @@ void HQuestionApplication::submitMenu(const HRaceSnapshot &race) noexcept {
 void HQuestionApplication::submitRun(const HRaceSnapshot &race) noexcept {
   char row0[] = "RUN P0 S0/0 L0";
   char row1[] = "D:000/000 CM";
-  char row2[] = "Y:000 TARGET";
+  char row2[] = "LINE 00/00 E+0";
   row0[5] =
       static_cast<char>('0' + static_cast<std::uint8_t>(race.program) + 1U);
   row0[8] = static_cast<char>('0' + race.segmentNumber + 1U);
@@ -555,9 +571,9 @@ void HQuestionApplication::submitRun(const HRaceSnapshot &race) noexcept {
   row0[13] = static_cast<char>('0' + race.lap + 1U);
   textNumber(row1, 2U, static_cast<std::uint16_t>(race.distanceCm));
   textNumber(row1, 6U, static_cast<std::uint16_t>(race.targetDistanceCm));
-  const float yaw =
-      imuSample_.yawDeg < 0.0F ? -imuSample_.yawDeg : imuSample_.yawDeg;
-  textNumber(row2, 2U, static_cast<std::uint16_t>(yaw));
+  textHexByte(row2, 5U, lineSample_.bits);
+  textHexByte(row2, 8U, lineSample_.rawBits);
+  textLineError(row2, 12U, lineSample_.error);
   (void)oled_.writeLine(0U, row0);
   (void)oled_.writeLine(1U, row1);
   (void)oled_.writeLine(2U, row2);

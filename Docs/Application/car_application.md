@@ -86,7 +86,7 @@ UART 解析字节数；两者都不应放入 ISR。
 
 - 已构建：2026-07-28 使用 SysConfig CLI 1.28.0 校验，并在临时 CCS 配置中以
   `APP_ACTIVE=0` 完成 Debug 全量构建；0 errors，唯一 warning 为 linker 对项目
-  默认 `0x800` heap 的提示。Flash 使用 27,304 B，SRAM 使用 3,139 B；
+  默认 `0x800` heap 的提示。Flash 使用 27,288 B，SRAM 使用 3,139 B；
 - 待实机验证：灰度高/低电平极性、左右传感器顺序、电机正方向、急弯差速、
   丢线保持/搜索方向、600 ms 最大盲行距离、自动重捕获、CENTER + UP 松手停车
   时延、OLED DMA 刷新和按键去抖。

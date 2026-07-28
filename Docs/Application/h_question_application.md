@@ -50,12 +50,18 @@ filter（可通过 `ATTITUDE_CONFIG_BACKEND` 切回 DMP 或 Kalman）。软件�
 再低速搜索；总丢线时间达到 600 ms 仍未找回则进入 `Fault`。P2 不使用丢线端点，
 所以持续丢线只会恢复或故障，不会提前完成 500 cm。
 
+H题基础调度为 5 ms。弧线与 P2 的灰度采样、`LineFollower` 和目标轮速建议每
+5 ms 更新；编码器速度 PID 仍按 50 ms 采样。直线/对角的 heading PID 保持
+100 ms 外环，避免在 IMU 噪声上无意义提频。串口 `CTRL` 帧与 OLED 运行页同时显示
+`bits/rawBits/error`，可直接区分灰度极性配置错误和真实丢线。
+
 所有调试与标定参数集中在 `Config/vehicle_tuning.hpp`，应用选择、姿态后端和
 BMI270 fusion 开关集中在 `Config/build_config.h`，均可通过编译选项 `-D`
 覆盖。LED 状态组合集中在 `Config/status_led_config.hpp`。起始值使用 48 mm
 轮径、28:1 减速比、13 线编码器和四倍频，即 1456
-counts/轮，场地长度为直线 100 cm、弧线 125.6 cm、对角 128 cm。直线/对角目标 200 mm/s，
-弧线目标 100 mm/s；正常 Tracking 和直线控制的正轮速目标最低 80 mm/s，零或负目标
+counts/轮，场地长度为直线 100 cm、弧线 125.6 cm、对角 128 cm。目标分支的实测
+起始值已迁入统一配置：直线/对角目标 250 mm/s、弧线目标 200 mm/s、速度
+PID `Kp=2.5`；正常 Tracking 和直线控制的正轮速目标最低 100 mm/s，零或负目标
 钳为零，恢复阶段不应用该最低轮速。P2 是固定 500 cm 的巡线测试，仅由里程
 完成，避免短暂丢线误触发终点。`WheelSpeedController` 每 50 ms 使用编码器闭环输出 PWM；
 当前速度 PID 为 `Kp=2, Ki=1, Kd=0`，输出限幅为 250。这些均待实车标定。
@@ -70,8 +76,8 @@ counts/轮，场地长度为直线 100 cm、弧线 125.6 cm、对角 128 cm。�
 
 - 已构建：2026-07-28，SysConfig CLI 1.28.0 校验通过；CCS Debug 下默认
   `APP_H_QUESTION` 与临时 `APP_ACTIVE=0` 普通循线分支均完成全量构建。两者均
-  0 errors，唯一 warning 为 linker 对默认 `0x800` heap 的提示。H题 Flash 使用
-  30,680 B，SRAM 使用 3,011 B。
+  0 errors，唯一 warning 为 linker 对默认 `0x800` heap 的提示。合入目标分支
+  需求后，H题 Flash 使用 31,288 B，SRAM 使用 3,011 B。
 - 待实机验证：启动日志顺序、四种 I2C 设备在/缺失组合、timeout 恢复、状态 LED
   表示，以及倒计时取消、运行急停、四路径顶点判断、P4 圈数、DMA OLED 刷新和所有
-  标定参数。
+  标定参数；特别需要复核 high-active 灰度极性及 200/250 mm/s 目标速度。
